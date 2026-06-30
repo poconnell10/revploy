@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router-dom'
 
+import { AuthProvider } from '@/shared/rbac/AuthContext'
+import { AppRoutes } from '@/routes'
 import './index.css'
 
 const queryClient = new QueryClient()
@@ -16,12 +18,11 @@ if (!rootElement) {
 createRoot(rootElement).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        {/* Routes are intentionally not defined yet — scaffold only. */}
-        <div className="flex min-h-screen items-center justify-center bg-navy text-gold">
-          <h1 className="font-sans text-2xl font-semibold">Revploy</h1>
-        </div>
-      </BrowserRouter>
+      <AuthProvider>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </AuthProvider>
     </QueryClientProvider>
   </StrictMode>,
 )
