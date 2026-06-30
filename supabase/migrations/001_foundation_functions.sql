@@ -42,23 +42,25 @@ $$;
 -- lock, so concurrent callers are serialized and never receive the same value.
 -- First code for a prefix is PREFIX-000001.
 -- ---------------------------------------------------------------------------
-create or replace function generate_display_code(prefix text) returns text
+-- The parameter is named p_prefix (not prefix) to avoid colliding with the
+-- id_sequences.prefix column: an unqualified "prefix" in the ON CONFLICT target
+-- would otherwise be resolved as the parameter and break conflict inference.
+create or replace function generate_display_code(p_prefix text) returns text
 language plpgsql
 as $$
-#variable_conflict use_variable
 declare
   v_val bigint;
 begin
   insert into id_sequences (prefix, next_val)
-  values (prefix, 1)
+  values (p_prefix, 1)
   on conflict (prefix) do nothing;
 
   update id_sequences
     set next_val = id_sequences.next_val + 1
-    where id_sequences.prefix = generate_display_code.prefix
-    returning id_sequences.next_val - 1 into v_val;
+    where prefix = p_prefix
+    returning next_val - 1 into v_val;
 
-  return prefix || '-' || lpad(v_val::text, 6, '0');
+  return p_prefix || '-' || lpad(v_val::text, 6, '0');
 end;
 $$;
 
