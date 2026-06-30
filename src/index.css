@@ -1,0 +1,87 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* ---- Revploy brand colors ---- */
+    --color-navy: #0d1f3c;
+    --color-navy-light: #1a3254;
+    --color-gold: #f5a623;
+    --color-gold-light: #fdf0d5;
+    --color-white: #ffffff;
+    --color-gray-50: #f4f6f9;
+    --color-gray-100: #e8ecf2;
+    --color-gray-400: #9aa3b2;
+    --color-gray-700: #374151;
+    --color-gray-900: #111827;
+    --color-success: #16a34a;
+    --color-warning: #d97706;
+    --color-danger: #dc2626;
+    --color-info: #2563eb;
+    --color-muted: #9aa3b2;
+
+    /* ---- Typography ---- */
+    --font-sans: 'DM Sans', sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
+
+    /* ---- shadcn/ui semantic tokens (HSL channels) ---- */
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 217 64% 14%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 33% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted-bg: 210 33% 96%;
+    --muted-foreground: 218 11% 65%;
+    --accent: 36 91% 55%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 27% 92%;
+    --input: 214 27% 92%;
+    --ring: 36 91% 55%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 217 64% 14%;
+    --foreground: 0 0% 100%;
+    --card: 215 53% 22%;
+    --card-foreground: 0 0% 100%;
+    --popover: 215 53% 22%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 36 91% 55%;
+    --primary-foreground: 222 47% 11%;
+    --secondary: 215 53% 22%;
+    --secondary-foreground: 0 0% 100%;
+    --muted-bg: 215 53% 22%;
+    --muted-foreground: 218 11% 65%;
+    --accent: 36 91% 55%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 215 53% 22%;
+    --input: 215 53% 22%;
+    --ring: 36 91% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}

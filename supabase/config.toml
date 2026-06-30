@@ -1,0 +1,11 @@
+# Supabase project configuration.
+# Generated as a scaffold — adjust as the project grows.
+# Docs: https://supabase.com/docs/guides/cli/config
+
+project_id = "revploy"
+
+[functions.events-dispatcher]
+verify_jwt = true
+
+[functions.ttv-daily-scorer]
+verify_jwt = true
