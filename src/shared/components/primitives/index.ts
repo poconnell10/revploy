@@ -16,6 +16,9 @@ export type { TTVBadgeProps } from './TTVBadge'
 export { TTVDonut } from './TTVDonut'
 export type { TTVDonutProps } from './TTVDonut'
 
+export { Sparkline } from './Sparkline'
+export type { SparklineProps } from './Sparkline'
+
 export { PhaseGateBanner } from './PhaseGateBanner'
 export type { PhaseGateBannerProps } from './PhaseGateBanner'
 

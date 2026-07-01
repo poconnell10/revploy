@@ -5,6 +5,7 @@ import { ProtectedRoute } from '@/shared/rbac/ProtectedRoute'
 import { useAuth } from '@/shared/rbac/auth-context'
 import { AppShell } from '@/layouts/AppShell'
 import { LoginPage } from '@/modules/auth/LoginPage'
+import { DashboardPage } from '@/modules/dashboard/DashboardPage'
 
 /** Gate a subtree behind one or more roles; redirect elsewhere if unauthorized. */
 function RequireRole({
@@ -55,7 +56,11 @@ export function AppRoutes() {
 
       <Route
         path="/dashboard"
-        element={<Shell title="Dashboard">{<div>Dashboard</div>}</Shell>}
+        element={
+          <Shell title="Dashboard">
+            <DashboardPage />
+          </Shell>
+        }
       />
 
       <Route
