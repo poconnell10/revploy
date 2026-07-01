@@ -92,7 +92,7 @@ export function AppRoutes() {
 
       <Route
         path="/logs"
-        element={<Shell title="Logs">{<div>Logs</div>}</Shell>}
+        element={<Shell title="Event Logs">{<div>Event Logs</div>}</Shell>}
       />
     </Routes>
   )
