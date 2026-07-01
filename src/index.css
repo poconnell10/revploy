@@ -22,6 +22,18 @@
     --color-danger: #dc2626;
     --color-info: #2563eb;
     --color-muted: #9aa3b2;
+    --color-purple: #7c3aed;
+
+    /* ---- Semantic tint backgrounds (~15% opacity equivalents) ---- */
+    --color-success-bg: #dcfce7;
+    --color-warning-bg: #fef3c7;
+    --color-danger-bg: #fee2e2;
+    --color-info-bg: #dbeafe;
+    --color-purple-bg: #ede9fe;
+
+    /* ---- Warning banner accents ---- */
+    --color-warning-strong: #92400e;
+    --color-warning-border: #fde68a;
 
     /* ---- Typography ---- */
     --font-sans: 'DM Sans', sans-serif;
