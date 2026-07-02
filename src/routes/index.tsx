@@ -7,6 +7,7 @@ import { AppShell } from '@/layouts/AppShell'
 import { LoginPage } from '@/modules/auth/LoginPage'
 import { DashboardPage } from '@/modules/dashboard/DashboardPage'
 import { PropertyCreatePage } from '@/modules/properties/PropertyCreatePage'
+import { PropertyDetailPage } from '@/modules/properties/detail/PropertyDetailPage'
 
 /** Gate a subtree behind one or more roles; redirect elsewhere if unauthorized. */
 function RequireRole({
@@ -79,7 +80,9 @@ export function AppRoutes() {
       <Route
         path="/properties/:id"
         element={
-          <Shell title="Property Detail">{<div>Property Detail</div>}</Shell>
+          <Shell title="Property Detail">
+            <PropertyDetailPage />
+          </Shell>
         }
       />
 
