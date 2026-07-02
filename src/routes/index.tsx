@@ -6,6 +6,7 @@ import { useAuth } from '@/shared/rbac/auth-context'
 import { AppShell } from '@/layouts/AppShell'
 import { LoginPage } from '@/modules/auth/LoginPage'
 import { DashboardPage } from '@/modules/dashboard/DashboardPage'
+import { PropertyCreatePage } from '@/modules/properties/PropertyCreatePage'
 
 /** Gate a subtree behind one or more roles; redirect elsewhere if unauthorized. */
 function RequireRole({
@@ -69,7 +70,11 @@ export function AppRoutes() {
       />
       <Route
         path="/properties/new"
-        element={<Shell title="New Property">{<div>New Property</div>}</Shell>}
+        element={
+          <Shell title="Add Property">
+            <PropertyCreatePage />
+          </Shell>
+        }
       />
       <Route
         path="/properties/:id"
