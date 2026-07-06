@@ -18,6 +18,8 @@ import {
 import { supabase } from '@/shared/lib/supabase'
 import { cn } from '@/shared/lib/utils'
 
+import { PropertySettingsTab } from './PropertySettingsTab'
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -33,8 +35,12 @@ interface PropertyRow {
   room_count: number | null
   city: string | null
   country: string | null
+  timezone: string | null
   start_date: string | null
   activation_date: string | null
+  region_id: string | null
+  brand_id: string | null
+  owner_id: string | null
   region: { name: string } | null
   brand: { name: string } | null
   owner: { name: string } | null
@@ -141,7 +147,7 @@ function useProperty(id: string) {
       const { data, error } = await supabase
         .from('properties')
         .select(
-          'id, code, name, lifecycle_state, phase_current, salesforce_id, ingauge_id, room_count, city, country, start_date, activation_date, region:regions(name), brand:brands(name), owner:owners(name)',
+          'id, code, name, lifecycle_state, phase_current, salesforce_id, ingauge_id, room_count, city, country, timezone, start_date, activation_date, region_id, brand_id, owner_id, region:regions(name), brand:brands(name), owner:owners(name)',
         )
         .eq('id', id)
         .single()
@@ -840,11 +846,7 @@ export function PropertyDetailPage() {
           </div>
         )}
 
-        {tab === 'settings' && (
-          <div className="rounded-xl border border-gray-100 bg-white px-6 py-12 text-center text-sm text-muted">
-            Settings — coming soon
-          </div>
-        )}
+        {tab === 'settings' && <PropertySettingsTab property={property} />}
       </div>
     </>
   )
