@@ -80,6 +80,13 @@ function usePropertiesQuery() {
         )
         .is('archived_at', null)
         .order('code', { ascending: true })
+      // TEMP diagnostic: confirms the live query path and what Supabase returns.
+      // Remove once live data is confirmed in the browser.
+      console.log('[dashboard] properties query →', {
+        rows: data?.length ?? 0,
+        error,
+        data,
+      })
       if (error) throw error
       return (data ?? []) as unknown as PropertyQueryRow[]
     },
