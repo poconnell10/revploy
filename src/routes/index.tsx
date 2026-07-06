@@ -8,6 +8,9 @@ import { LoginPage } from '@/modules/auth/LoginPage'
 import { DashboardPage } from '@/modules/dashboard/DashboardPage'
 import { PropertyCreatePage } from '@/modules/properties/PropertyCreatePage'
 import { PropertyDetailPage } from '@/modules/properties/detail/PropertyDetailPage'
+import { BrandsPage } from '@/modules/admin/brands/BrandsPage'
+import { OwnersPage } from '@/modules/admin/owners/OwnersPage'
+import { RegionsPage } from '@/modules/admin/regions/RegionsPage'
 
 /** Gate a subtree behind one or more roles; redirect elsewhere if unauthorized. */
 function RequireRole({
@@ -92,15 +95,27 @@ export function AppRoutes() {
       />
       <Route
         path="/admin/brands"
-        element={<AdminShell title="Brands">{<div>Brands</div>}</AdminShell>}
+        element={
+          <AdminShell title="Brands">
+            <BrandsPage />
+          </AdminShell>
+        }
       />
       <Route
         path="/admin/owners"
-        element={<AdminShell title="Owners">{<div>Owners</div>}</AdminShell>}
+        element={
+          <AdminShell title="Owners">
+            <OwnersPage />
+          </AdminShell>
+        }
       />
       <Route
         path="/admin/regions"
-        element={<AdminShell title="Regions">{<div>Regions</div>}</AdminShell>}
+        element={
+          <AdminShell title="Regions">
+            <RegionsPage />
+          </AdminShell>
+        }
       />
 
       <Route
