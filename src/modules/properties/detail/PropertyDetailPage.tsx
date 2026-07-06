@@ -18,6 +18,7 @@ import {
 import { supabase } from '@/shared/lib/supabase'
 import { cn } from '@/shared/lib/utils'
 
+import { PropertyJournalTab } from '../journal/PropertyJournalTab'
 import { PropertySettingsTab } from './PropertySettingsTab'
 
 // ---------------------------------------------------------------------------
@@ -840,11 +841,7 @@ export function PropertyDetailPage() {
           </div>
         )}
 
-        {tab === 'journal' && (
-          <div className="rounded-xl border border-gray-100 bg-white px-6 py-12 text-center text-sm text-muted">
-            Journal — coming soon
-          </div>
-        )}
+        {tab === 'journal' && <PropertyJournalTab propertyId={property.id} />}
 
         {tab === 'settings' && <PropertySettingsTab property={property} />}
       </div>
