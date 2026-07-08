@@ -18,6 +18,8 @@ import {
 import { supabase } from '@/shared/lib/supabase'
 import { cn } from '@/shared/lib/utils'
 
+import { PropertyChecklistTab } from '../checklist/PropertyChecklistTab'
+import { pointsEarned, useChecklistItems } from '../checklist/checklist-data'
 import { PropertyJournalTab } from '../journal/PropertyJournalTab'
 import { PropertySettingsTab } from './PropertySettingsTab'
 
@@ -73,7 +75,7 @@ interface ContactRow {
   role_type: string
 }
 
-type Tab = 'overview' | 'tasks' | 'journal' | 'settings'
+type Tab = 'overview' | 'tasks' | 'checklist' | 'journal' | 'settings'
 
 const PHASE_HEX: Record<Phase, string> = {
   data: '#7c3aed',
@@ -615,6 +617,7 @@ export function PropertyDetailPage() {
   const propertyQuery = useProperty(id)
   const tasksQuery = useTasks(id)
   const contactsQuery = useContacts(id)
+  const checklistQuery = useChecklistItems(id)
 
   const updateStatus = useMutation({
     mutationFn: async ({
@@ -665,6 +668,8 @@ export function PropertyDetailPage() {
   const configTasks = byPhase('configuration')
   const provTasks = byPhase('provisioning')
 
+  const checklistItems = checklistQuery.data ?? []
+
   const dataTtv = Math.round((completeIn(dataTasks) / 6) * 100)
   const configTtv = startedIn(configTasks)
     ? Math.round((completeIn(configTasks) / 8) * 100)
@@ -672,8 +677,15 @@ export function PropertyDetailPage() {
   const provTtv = startedIn(provTasks)
     ? Math.round((completeIn(provTasks) / 6) * 100)
     : null
-  const overallTtv = Math.round((completeIn(tasks) / 20) * 100)
-  const anyStarted = tasks.some((t) => t.status !== 'not_started')
+
+  const technicalTtv = Math.round((completeIn(tasks) / 20) * 100)
+  const points = pointsEarned(checklistItems)
+  const operationalTtv = Math.round((points / 100) * 100)
+  const overallTtv = Math.round((technicalTtv + operationalTtv) / 2)
+
+  const anyStarted =
+    tasks.some((t) => t.status !== 'not_started') ||
+    checklistItems.some((i) => i.status !== 'not_started')
   const risk = deriveRisk(overallTtv, anyStarted)
 
   const divComplete =
@@ -692,6 +704,7 @@ export function PropertyDetailPage() {
   const TABS: { id: Tab; label: string }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'tasks', label: 'Tasks' },
+    { id: 'checklist', label: 'Checklist' },
     { id: 'journal', label: 'Journal' },
     { id: 'settings', label: 'Settings' },
   ]
@@ -778,7 +791,7 @@ export function PropertyDetailPage() {
       <div className="pt-6">
         {tab === 'overview' && (
           <div className="flex flex-col gap-4">
-            <div className="grid grid-cols-[1.3fr_1fr_1fr_1fr] gap-3">
+            <div className="grid grid-cols-[1.4fr_1fr_1fr_1fr_1fr_1fr] gap-3">
               {/* Overall */}
               <div className="flex items-center gap-4 rounded-2xl border border-gray-100 bg-white p-5">
                 <TTVDonut score={overallTtv} size={72} />
@@ -797,6 +810,8 @@ export function PropertyDetailPage() {
                   </div>
                 </div>
               </div>
+              <PhaseHeroCard score={technicalTtv} label="Technical TTV" />
+              <PhaseHeroCard score={operationalTtv} label="Operational TTV" />
               <PhaseHeroCard score={dataTtv} label="Data Phase" />
               <PhaseHeroCard score={configTtv} label="Config Phase" />
               <PhaseHeroCard score={provTtv} label="Prov Phase" />
@@ -839,6 +854,10 @@ export function PropertyDetailPage() {
               onCycle={onCycle}
             />
           </div>
+        )}
+
+        {tab === 'checklist' && (
+          <PropertyChecklistTab propertyId={property.id} />
         )}
 
         {tab === 'journal' && <PropertyJournalTab propertyId={property.id} />}

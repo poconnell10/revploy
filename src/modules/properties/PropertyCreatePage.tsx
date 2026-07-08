@@ -228,6 +228,14 @@ export function PropertyCreatePage() {
       )
       if (tasksError) throw tasksError
 
+      const { error: checklistError } = await supabase.rpc(
+        'create_property_checklist_items',
+        {
+          p_property_id: propertyId,
+        },
+      )
+      if (checklistError) throw checklistError
+
       return propertyId
     },
     onSuccess: (propertyId) => navigate(`/properties/${propertyId}`),
