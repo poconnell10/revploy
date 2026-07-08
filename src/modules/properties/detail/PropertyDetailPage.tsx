@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
@@ -629,7 +629,21 @@ export function PropertyDetailPage() {
 
   const propertyProducts = productsQuery.data ?? []
   const [selectedProductId, setSelectedProductId] = useState<string>()
-  const activeProductId = selectedProductId ?? propertyProducts[0]?.id
+
+  // Reset the manual selection whenever the property changes — the route
+  // reuses this component across properties, so a selection from a previous
+  // property must not leak into the next one.
+  useEffect(() => {
+    setSelectedProductId(undefined)
+  }, [id])
+
+  // Honour the manual selection only while it still belongs to this property;
+  // otherwise fall back to the first product. Keeps the switcher self-correcting.
+  const activeProductId =
+    selectedProductId &&
+    propertyProducts.some((pp) => pp.id === selectedProductId)
+      ? selectedProductId
+      : propertyProducts[0]?.id
   const activeProduct = propertyProducts.find((pp) => pp.id === activeProductId)
 
   const tasksQuery = useTasks(id, activeProductId)
@@ -803,9 +817,12 @@ export function PropertyDetailPage() {
           </div>
         </div>
 
-        {/* Product switcher */}
+        {/* Product switcher (the only interactive product control) */}
         {propertyProducts.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-4 border-b border-gray-50 pb-0.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+              Viewing
+            </span>
             {propertyProducts.map((pp) => {
               const active = pp.id === activeProductId
               return (
@@ -814,8 +831,10 @@ export function PropertyDetailPage() {
                   type="button"
                   onClick={() => setSelectedProductId(pp.id)}
                   className={cn(
-                    '-mb-px flex items-center gap-1.5 border-b-2 pb-1.5 text-xs font-semibold transition-colors',
-                    active ? '' : 'border-transparent text-gray-400',
+                    '-mb-px flex cursor-pointer items-center gap-1.5 border-b-2 pb-1.5 text-xs font-semibold transition-colors',
+                    active
+                      ? ''
+                      : 'border-transparent text-gray-400 hover:text-navy',
                   )}
                   style={
                     active
