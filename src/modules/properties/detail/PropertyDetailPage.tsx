@@ -193,23 +193,6 @@ function useTasks(id: string, propertyProductId: string | undefined) {
         )
         .eq('property_id', id)
         .eq('property_product_id', propertyProductId as string)
-      // TEMP diagnostic: confirms the tasks query re-runs per product switch and
-      // shows what the WHERE property_product_id filter actually returns.
-      console.log('[tasks] queryFn →', {
-        activeProductId: propertyProductId,
-        filter: `property_id=${id} AND property_product_id=${propertyProductId}`,
-        rowsReturned: data?.length ?? 0,
-        rowProductIds: [
-          ...new Set(
-            (data ?? []).map(
-              (r) =>
-                (r as { property_product_id: string | null })
-                  .property_product_id,
-            ),
-          ),
-        ],
-        error,
-      })
       if (error) throw error
       const rows = (data ?? []) as unknown as TaskRow[]
       return rows
@@ -768,10 +751,24 @@ function DataTaskRow({
   const [blockedVal, setBlockedVal] = useState<string>(
     task.blocked_reason ?? '',
   )
+  const [noteSaved, setNoteSaved] = useState(false)
+  // Tracks the last-persisted note so blur + Post don't double-save/double-post.
+  const savedNoteRef = useRef<string>(task.notes ?? '')
 
   // Complete requires an assignee: either a signed-in user (auto-assigned) or
   // an already-assigned user. Otherwise the option is blocked.
   const completeBlocked = !currentUserId && !task.assigned_to
+
+  const saveNote = (confirm: boolean) => {
+    if (notesVal !== savedNoteRef.current) {
+      savedNoteRef.current = notesVal
+      onNotes(task.id, notesVal, def.display_name)
+    }
+    if (confirm) {
+      setNoteSaved(true)
+      window.setTimeout(() => setNoteSaved(false), 2000)
+    }
+  }
 
   const handleSelect = (next: TaskStatus) => {
     if (next === 'complete' && completeBlocked) {
@@ -789,6 +786,7 @@ function DataTaskRow({
   }, [task.due_date])
   useEffect(() => {
     setNotesVal(task.notes ?? '')
+    savedNoteRef.current = task.notes ?? ''
   }, [task.notes])
   useEffect(() => {
     setBlockedVal(task.blocked_reason ?? '')
@@ -926,12 +924,25 @@ function DataTaskRow({
               value={notesVal}
               placeholder="Add a note..."
               onChange={(e) => setNotesVal(e.target.value)}
-              onBlur={() => {
-                if ((task.notes ?? '') !== notesVal)
-                  onNotes(task.id, notesVal, def.display_name)
-              }}
+              onBlur={() => saveNote(false)}
               className={cn(UNDERLINE_INPUT, 'resize-none bg-gray-50')}
             />
+            <div className="mt-1 flex h-5 items-center gap-2">
+              {notesVal.trim() && (
+                <button
+                  type="button"
+                  onClick={() => saveNote(true)}
+                  className="rounded bg-gold px-2 py-0.5 text-[11px] font-semibold text-navy transition-[filter] hover:brightness-95"
+                >
+                  Post
+                </button>
+              )}
+              {noteSaved && (
+                <span className="text-[11px] font-medium text-success">
+                  Saved
+                </span>
+              )}
+            </div>
           </div>
         </div>
       )}
