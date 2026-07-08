@@ -780,26 +780,6 @@ export function PropertyDetailPage() {
               {property.city ?? '—'} · {property.room_count ?? '—'} rooms ·{' '}
               {property.owner?.name ?? 'No owner'}
             </div>
-            {propertyProducts.length > 0 && (
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                {propertyProducts.map((pp) => (
-                  <span
-                    key={pp.id}
-                    className="inline-flex items-center gap-1.5 rounded-[20px] px-2 py-0.5 text-[11px] font-semibold"
-                    style={{
-                      color: pp.product.color,
-                      background: `${pp.product.color}1a`,
-                    }}
-                  >
-                    <span
-                      className="h-1.5 w-1.5 rounded-full"
-                      style={{ background: pp.product.color }}
-                    />
-                    {pp.product.display_name}
-                  </span>
-                ))}
-              </div>
-            )}
           </div>
           <div className="flex shrink-0 gap-6">
             <div className="text-right">
