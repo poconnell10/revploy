@@ -3,7 +3,7 @@ import { cn } from '@/shared/lib/utils'
 export type Phase = 'data' | 'configuration' | 'provisioning'
 
 const PHASE_STYLES: Record<Phase, { label: string; className: string }> = {
-  data: { label: 'Data', className: 'bg-purple-subtle text-purple' },
+  data: { label: 'Data', className: 'bg-[#cffafe] text-[#0891b2]' },
   configuration: {
     label: 'Configuration',
     className: 'bg-warning-subtle text-warning',

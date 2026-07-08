@@ -78,8 +78,9 @@ interface ContactRow {
 
 type Tab = 'overview' | 'tasks' | 'checklist' | 'journal' | 'settings'
 
+// Phase dot colors — kept distinct from product colors (DeskMax is #7c3aed).
 const PHASE_HEX: Record<Phase, string> = {
-  data: '#7c3aed',
+  data: '#0891b2',
   configuration: '#d97706',
   provisioning: '#2563eb',
 }
