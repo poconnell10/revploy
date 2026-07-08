@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
@@ -647,27 +647,114 @@ function PhaseSection({
 // Data phase — enhanced interactive rows (assignee, editable dates, notes)
 // ---------------------------------------------------------------------------
 
-const FIELD_LABEL =
-  'mb-1.5 text-[11px] font-medium uppercase tracking-wide text-gray-400'
-const DATA_INPUT =
-  'w-full rounded-lg border border-gray-100 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:border-gold focus:ring-1 focus:ring-gold'
+const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
+  { value: 'not_started', label: 'Not Started' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'complete', label: 'Complete' },
+  { value: 'blocked', label: 'Blocked' },
+]
+
+const DATA_FIELD_LABEL =
+  'mb-1 text-[10px] font-medium uppercase tracking-wide text-gray-400'
+// Compact underline-style inputs for the expanded detail row.
+const UNDERLINE_INPUT =
+  'w-full border-0 border-b border-gray-100 bg-transparent px-0 py-1 text-[12px] text-gray-700 outline-none focus:border-gold'
+
+/** Status badge that opens a small dropdown menu to pick a new status. */
+function StatusDropdown({
+  status,
+  onSelect,
+}: {
+  status: TaskStatus
+  onSelect: (next: TaskStatus) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          setOpen((v) => !v)
+        }}
+        className="cursor-pointer"
+      >
+        <StatusBadge status={status} />
+      </button>
+      {open && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="absolute left-0 top-full z-20 mt-1 w-40 overflow-hidden rounded-lg border border-gray-100 bg-white"
+          style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.12)' }}
+        >
+          {STATUS_OPTIONS.map((opt) => {
+            const active = opt.value === status
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setOpen(false)
+                  if (opt.value !== status) onSelect(opt.value)
+                }}
+                className={cn(
+                  'flex h-8 w-full items-center px-4 text-left text-[13px] transition-colors',
+                  active
+                    ? 'bg-gold-light font-semibold text-warning'
+                    : 'text-gray-700 hover:bg-gray-50',
+                )}
+              >
+                {opt.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function DataTaskRow({
   task,
-  onStatusCycle,
+  isLast,
+  onStatus,
   onDueDate,
   onNotes,
+  onBlockedReason,
 }: {
   task: TaskRow
-  onStatusCycle: (task: TaskRow) => void
+  isLast: boolean
+  onStatus: (task: TaskRow, next: TaskStatus) => void
   onDueDate: (taskId: string, date: string) => void
-  onNotes: (taskId: string, value: string) => void
+  onNotes: (taskId: string, value: string, taskName: string) => void
+  onBlockedReason: (taskId: string, value: string) => void
 }) {
   const def = task.definition
   const [expanded, setExpanded] = useState(false)
-  const [flash, setFlash] = useState(false)
   const [dateVal, setDateVal] = useState<string>(task.due_date ?? todayStr())
   const [notesVal, setNotesVal] = useState<string>(task.notes ?? '')
+  const [blockedVal, setBlockedVal] = useState<string>(
+    task.blocked_reason ?? '',
+  )
 
   useEffect(() => {
     if (task.due_date) setDateVal(task.due_date)
@@ -675,6 +762,9 @@ function DataTaskRow({
   useEffect(() => {
     setNotesVal(task.notes ?? '')
   }, [task.notes])
+  useEffect(() => {
+    setBlockedVal(task.blocked_reason ?? '')
+  }, [task.blocked_reason])
 
   // assigned_to is a user UUID (auth.users email isn't reachable from the
   // client), so it stands in for the "email" the design references.
@@ -683,58 +773,33 @@ function DataTaskRow({
     : null
 
   return (
-    <div className="rounded-xl border border-gray-100 bg-white">
+    <div style={{ borderBottom: isLast ? 'none' : '1px solid #f4f6f9' }}>
+      {/* Collapsed single-line row */}
       <div
         onClick={() => setExpanded((v) => !v)}
-        className="flex cursor-pointer items-center gap-3 p-4"
+        className="flex h-12 cursor-pointer items-center gap-3 px-4"
       >
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <span className="min-w-0 flex-1 text-sm font-medium text-navy">
-            {def.display_name}
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-navy">
+          {def.display_name}
+        </span>
+        {def.is_phase_gate && (
+          <span className="shrink-0 whitespace-nowrap rounded border border-[#fde8a5] bg-gold-light px-1.5 py-0.5 text-[10px] font-semibold text-warning">
+            Phase Gate
           </span>
-          {def.is_phase_gate && (
-            <span className="shrink-0 whitespace-nowrap rounded border border-[#fde8a5] bg-gold-light px-1.5 py-0.5 text-[10px] font-semibold text-warning">
-              Phase Gate
-            </span>
-          )}
-          {def.completion_mode === 'auto_with_override' && (
-            <span className="shrink-0 whitespace-nowrap rounded bg-info-subtle px-1.5 py-0.5 text-[10px] font-medium text-info">
-              Auto
-            </span>
-          )}
-          <span className="shrink-0 whitespace-nowrap rounded bg-gray-50 px-1.5 py-0.5 text-[10px] capitalize text-muted">
-            {def.required_role}
-          </span>
-        </div>
-
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            setFlash(true)
-            window.setTimeout(() => setFlash(false), 350)
-            onStatusCycle(task)
-          }}
-          className="shrink-0 cursor-pointer rounded-[20px]"
-          style={{
-            boxShadow: flash
-              ? '0 0 0 3px rgba(245,166,35,0.5)'
-              : '0 0 0 0 rgba(245,166,35,0)',
-            transition: 'box-shadow 350ms ease',
-          }}
-        >
-          <StatusBadge status={task.status} />
-        </button>
-
-        {assigneeInitial ? (
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gold text-[10px] font-bold text-navy">
+        )}
+        <span className="shrink-0 whitespace-nowrap rounded bg-gray-50 px-1.5 py-0.5 text-[11px] capitalize text-muted">
+          {def.required_role}
+        </span>
+        {assigneeInitial && (
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gold text-[9px] font-bold text-navy">
             {assigneeInitial}
           </span>
-        ) : (
-          <span className="w-6 shrink-0" />
         )}
-
-        <span className="w-[70px] shrink-0 text-right font-mono text-[11px] text-gray-400">
+        <StatusDropdown
+          status={task.status}
+          onSelect={(next) => onStatus(task, next)}
+        />
+        <span className="w-[64px] shrink-0 text-right font-mono text-[12px] text-gray-400">
           {task.due_date ? formatDate(task.due_date, false) : '—'}
         </span>
         <span className="w-4 shrink-0 text-center text-sm text-muted">
@@ -742,51 +807,67 @@ function DataTaskRow({
         </span>
       </div>
 
+      {/* Blocked reason inline input */}
+      {task.status === 'blocked' && (
+        <div
+          className="px-4 pb-3"
+          style={{ borderTop: '1px solid #f4f6f9' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <input
+            type="text"
+            value={blockedVal}
+            placeholder="Describe the blocker..."
+            onChange={(e) => setBlockedVal(e.target.value)}
+            onBlur={() => {
+              if ((task.blocked_reason ?? '') !== blockedVal)
+                onBlockedReason(task.id, blockedVal)
+            }}
+            className="mt-2 w-full rounded-lg border border-[#fde68a] bg-warning-subtle px-3 py-2 text-[12px] text-warning-strong outline-none focus:border-warning"
+          />
+        </div>
+      )}
+
+      {/* Expanded 3-column detail */}
       {expanded && (
-        <div className="grid grid-cols-1 gap-4 border-t border-gray-50 bg-gray-50/60 px-4 py-4 sm:grid-cols-2">
+        <div
+          className="grid grid-cols-1 gap-4 bg-gray-50 px-4 py-3 sm:grid-cols-3"
+          style={{ borderTop: '1px solid #f4f6f9' }}
+          onClick={(e) => e.stopPropagation()}
+        >
           {/* Assignee */}
           <div>
-            <div className={FIELD_LABEL}>Assigned To</div>
+            <div className={DATA_FIELD_LABEL}>Assigned To</div>
             {task.assigned_to ? (
               <div className="flex items-center gap-2">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gold text-xs font-bold text-navy">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gold text-[10px] font-bold text-navy">
                   {assigneeInitial}
                 </span>
-                <span className="truncate text-[13px] text-gray-700">
-                  {task.assigned_to.slice(0, 20)}
+                <span className="truncate text-[12px] text-gray-700">
+                  {task.assigned_to.slice(0, 18)}
                 </span>
               </div>
             ) : (
-              <div className="flex items-center gap-2">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-bold text-muted">
-                  —
-                </span>
-                <span className="text-[13px] text-muted">Unassigned</span>
-              </div>
+              <div className="text-[12px] text-muted">Unassigned</div>
             )}
           </div>
 
-          {/* Start Date */}
+          {/* Dates */}
           <div>
-            <div className={FIELD_LABEL}>Start Date</div>
+            <div className={DATA_FIELD_LABEL}>Start Date</div>
             <input
               type="date"
               value={dateVal}
-              onClick={(e) => e.stopPropagation()}
               onChange={(e) => {
                 setDateVal(e.target.value)
                 onDueDate(task.id, e.target.value)
               }}
-              className={DATA_INPUT}
+              className={UNDERLINE_INPUT}
             />
-          </div>
-
-          {/* Completed */}
-          <div>
-            <div className={FIELD_LABEL}>Completed</div>
+            <div className={cn(DATA_FIELD_LABEL, 'mt-2')}>Completed</div>
             <div
               className={cn(
-                'text-[13px]',
+                'text-[12px]',
                 task.status === 'complete' ? 'text-gray-700' : 'text-gray-400',
               )}
             >
@@ -797,18 +878,18 @@ function DataTaskRow({
           </div>
 
           {/* Notes */}
-          <div className="sm:col-span-2">
-            <div className={FIELD_LABEL}>Notes</div>
+          <div>
+            <div className={DATA_FIELD_LABEL}>Notes</div>
             <textarea
-              rows={3}
+              rows={2}
               value={notesVal}
-              placeholder="Add task notes..."
-              onClick={(e) => e.stopPropagation()}
+              placeholder="Add a note..."
               onChange={(e) => setNotesVal(e.target.value)}
               onBlur={() => {
-                if ((task.notes ?? '') !== notesVal) onNotes(task.id, notesVal)
+                if ((task.notes ?? '') !== notesVal)
+                  onNotes(task.id, notesVal, def.display_name)
               }}
-              className={cn(DATA_INPUT, 'resize-none')}
+              className={cn(UNDERLINE_INPUT, 'resize-none bg-gray-50')}
             />
           </div>
         </div>
@@ -820,15 +901,17 @@ function DataTaskRow({
 function DataPhaseSection({
   score,
   tasks,
-  onStatusCycle,
+  onStatus,
   onDueDate,
   onNotes,
+  onBlockedReason,
 }: {
   score: number | null
   tasks: TaskRow[]
-  onStatusCycle: (task: TaskRow) => void
+  onStatus: (task: TaskRow, next: TaskStatus) => void
   onDueDate: (taskId: string, date: string) => void
-  onNotes: (taskId: string, value: string) => void
+  onNotes: (taskId: string, value: string, taskName: string) => void
+  onBlockedReason: (taskId: string, value: string) => void
 }) {
   return (
     <div className="flex flex-col gap-2.5">
@@ -843,15 +926,19 @@ function DataPhaseSection({
           {PHASE_TASK_TOTAL.data} tasks
         </span>
       </div>
-      {tasks.map((t) => (
-        <DataTaskRow
-          key={t.id}
-          task={t}
-          onStatusCycle={onStatusCycle}
-          onDueDate={onDueDate}
-          onNotes={onNotes}
-        />
-      ))}
+      <div className="rounded-xl border border-gray-100 bg-white">
+        {tasks.map((t, i) => (
+          <DataTaskRow
+            key={t.id}
+            task={t}
+            isLast={i === tasks.length - 1}
+            onStatus={onStatus}
+            onDueDate={onDueDate}
+            onNotes={onNotes}
+            onBlockedReason={onBlockedReason}
+          />
+        ))}
+      </div>
     </div>
   )
 }
@@ -940,23 +1027,26 @@ export function PropertyDetailPage() {
         status: newStatus,
         updated_at: now,
       }
-      if (newStatus === 'complete') {
-        patch.completed_at = now
-        patch.completed_by = uid
-      }
-      if (task.status === 'complete' && newStatus !== 'complete') {
-        patch.completed_at = null
-        patch.completed_by = null
-      }
-      if (task.status === 'not_started' && newStatus === 'in_progress') {
-        patch.assigned_to = uid
-        patch.due_date = todayStr()
-      }
       if (newStatus === 'not_started') {
         patch.assigned_to = null
         patch.due_date = null
         patch.completed_at = null
         patch.completed_by = null
+        patch.blocked_reason = null
+      } else {
+        // Auto-assign on every non-not_started status change.
+        patch.assigned_to = uid
+        if (task.status === 'not_started' && newStatus === 'in_progress') {
+          patch.due_date = todayStr()
+        }
+        if (newStatus === 'complete') {
+          patch.completed_at = now
+          patch.completed_by = uid
+        }
+        if (task.status === 'complete' && newStatus !== 'complete') {
+          patch.completed_at = null
+          patch.completed_by = null
+        }
       }
       const { error } = await supabase
         .from('property_lifecycle_tasks')
@@ -968,16 +1058,18 @@ export function PropertyDetailPage() {
       await queryClient.cancelQueries({ queryKey: tasksKey })
       const previous = queryClient.getQueryData<TaskRow[]>(tasksKey)
       const optimistic: Partial<TaskRow> = { status: newStatus }
-      if (newStatus === 'complete')
-        optimistic.completed_at = new Date().toISOString()
-      if (task.status === 'complete' && newStatus !== 'complete')
-        optimistic.completed_at = null
-      if (task.status === 'not_started' && newStatus === 'in_progress')
-        optimistic.due_date = todayStr()
       if (newStatus === 'not_started') {
         optimistic.assigned_to = null
         optimistic.due_date = null
         optimistic.completed_at = null
+        optimistic.blocked_reason = null
+      } else {
+        if (task.status === 'not_started' && newStatus === 'in_progress')
+          optimistic.due_date = todayStr()
+        if (newStatus === 'complete')
+          optimistic.completed_at = new Date().toISOString()
+        if (task.status === 'complete' && newStatus !== 'complete')
+          optimistic.completed_at = null
       }
       queryClient.setQueryData<TaskRow[]>(tasksKey, (old) =>
         old?.map((t) => (t.id === task.id ? { ...t, ...optimistic } : t)),
@@ -1004,7 +1096,7 @@ export function PropertyDetailPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks', id] }),
   })
 
-  const notesMutation = useMutation({
+  const blockedReasonMutation = useMutation({
     mutationFn: async ({
       taskId,
       value,
@@ -1014,11 +1106,55 @@ export function PropertyDetailPage() {
     }) => {
       const { error } = await supabase
         .from('property_lifecycle_tasks')
-        .update({ notes: value, updated_at: new Date().toISOString() })
+        .update({
+          blocked_reason: value || null,
+          updated_at: new Date().toISOString(),
+        })
         .eq('id', taskId)
       if (error) throw error
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks', id] }),
+  })
+
+  // Saving a task note also drops a linked entry into the property journal.
+  const notesMutation = useMutation({
+    mutationFn: async ({
+      taskId,
+      value,
+      taskName,
+    }: {
+      taskId: string
+      value: string
+      taskName: string
+    }) => {
+      const now = new Date().toISOString()
+      const { error } = await supabase
+        .from('property_lifecycle_tasks')
+        .update({ notes: value, updated_at: now })
+        .eq('id', taskId)
+      if (error) throw error
+
+      const trimmed = value.trim()
+      if (trimmed) {
+        const { data: userData } = await supabase.auth.getUser()
+        const uid = userData.user?.id ?? null
+        const { error: journalError } = await supabase
+          .from('journal_entries')
+          .insert({
+            property_id: id,
+            author_id: uid,
+            entry_type: 'user_note',
+            body: `[Task: ${taskName}] ${trimmed}`,
+            customer_visible: false,
+            parent_id: null,
+          })
+        if (journalError) throw journalError
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks', id] })
+      queryClient.invalidateQueries({ queryKey: ['journal', id] })
+    },
   })
 
   if (propertyQuery.isLoading) {
@@ -1078,12 +1214,14 @@ export function PropertyDetailPage() {
   const onCycle = (taskId: string, newStatus: TaskStatus) =>
     updateStatus.mutate({ taskId, newStatus })
 
-  const onDataStatusCycle = (task: TaskRow) =>
-    dataStatusMutation.mutate({ task, newStatus: NEXT_STATUS[task.status] })
+  const onDataStatus = (task: TaskRow, newStatus: TaskStatus) =>
+    dataStatusMutation.mutate({ task, newStatus })
   const onDataDueDate = (taskId: string, date: string) =>
     dueDateMutation.mutate({ taskId, date })
-  const onDataNotes = (taskId: string, value: string) =>
-    notesMutation.mutate({ taskId, value })
+  const onDataNotes = (taskId: string, value: string, taskName: string) =>
+    notesMutation.mutate({ taskId, value, taskName })
+  const onDataBlockedReason = (taskId: string, value: string) =>
+    blockedReasonMutation.mutate({ taskId, value })
 
   const days = daysSince(property.start_date)
 
@@ -1284,9 +1422,10 @@ export function PropertyDetailPage() {
             <DataPhaseSection
               score={dataTtv}
               tasks={dataTasks}
-              onStatusCycle={onDataStatusCycle}
+              onStatus={onDataStatus}
               onDueDate={onDataDueDate}
               onNotes={onDataNotes}
+              onBlockedReason={onDataBlockedReason}
             />
             <PhaseSection
               phase="configuration"
