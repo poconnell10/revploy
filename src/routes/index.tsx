@@ -6,6 +6,7 @@ import { useAuth } from '@/shared/rbac/auth-context'
 import { AppShell } from '@/layouts/AppShell'
 import { LoginPage } from '@/modules/auth/LoginPage'
 import { DashboardPage } from '@/modules/dashboard/DashboardPage'
+import { PropertiesPage } from '@/modules/properties/PropertiesPage'
 import { PropertyCreatePage } from '@/modules/properties/PropertyCreatePage'
 import { PropertyDetailPage } from '@/modules/properties/detail/PropertyDetailPage'
 import { BrandsPage } from '@/modules/admin/brands/BrandsPage'
@@ -71,7 +72,11 @@ export function AppRoutes() {
 
       <Route
         path="/properties"
-        element={<Shell title="Properties">{<div>Properties</div>}</Shell>}
+        element={
+          <Shell title="Properties">
+            <PropertiesPage />
+          </Shell>
+        }
       />
       <Route
         path="/properties/new"
