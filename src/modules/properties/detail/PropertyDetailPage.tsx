@@ -16,6 +16,7 @@ import {
   type TaskStatus,
 } from '@/shared/components/primitives'
 import { supabase } from '@/shared/lib/supabase'
+import { usePropertyProducts } from '@/shared/products/products'
 import { cn } from '@/shared/lib/utils'
 
 import { PropertyChecklistTab } from '../checklist/PropertyChecklistTab'
@@ -160,10 +161,10 @@ function useProperty(id: string) {
   })
 }
 
-function useTasks(id: string) {
+function useTasks(id: string, propertyProductId: string | undefined) {
   return useQuery({
-    queryKey: ['tasks', id],
-    enabled: !!id,
+    queryKey: ['tasks', id, propertyProductId],
+    enabled: !!id && !!propertyProductId,
     queryFn: async (): Promise<TaskRow[]> => {
       const { data, error } = await supabase
         .from('property_lifecycle_tasks')
@@ -171,6 +172,7 @@ function useTasks(id: string) {
           'id, status, assigned_to, completed_at, due_date, blocked_reason, definition:lifecycle_task_definitions(task_key, phase, display_name, required_role, is_phase_gate, completion_mode, order_index)',
         )
         .eq('property_id', id)
+        .eq('property_product_id', propertyProductId as string)
       if (error) throw error
       const rows = (data ?? []) as unknown as TaskRow[]
       return rows
@@ -622,9 +624,16 @@ export function PropertyDetailPage() {
   const [warningsDismissed, setWarningsDismissed] = useState(false)
 
   const propertyQuery = useProperty(id)
-  const tasksQuery = useTasks(id)
   const contactsQuery = useContacts(id)
-  const checklistQuery = useChecklistItems(id)
+  const productsQuery = usePropertyProducts(id)
+
+  const propertyProducts = productsQuery.data ?? []
+  const [selectedProductId, setSelectedProductId] = useState<string>()
+  const activeProductId = selectedProductId ?? propertyProducts[0]?.id
+  const activeProduct = propertyProducts.find((pp) => pp.id === activeProductId)
+
+  const tasksQuery = useTasks(id, activeProductId)
+  const checklistQuery = useChecklistItems(id, activeProductId)
 
   const updateStatus = useMutation({
     mutationFn: async ({
@@ -757,6 +766,26 @@ export function PropertyDetailPage() {
               {property.city ?? '—'} · {property.room_count ?? '—'} rooms ·{' '}
               {property.owner?.name ?? 'No owner'}
             </div>
+            {propertyProducts.length > 0 && (
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {propertyProducts.map((pp) => (
+                  <span
+                    key={pp.id}
+                    className="inline-flex items-center gap-1.5 rounded-[20px] px-2 py-0.5 text-[11px] font-semibold"
+                    style={{
+                      color: pp.product.color,
+                      background: `${pp.product.color}1a`,
+                    }}
+                  >
+                    <span
+                      className="h-1.5 w-1.5 rounded-full"
+                      style={{ background: pp.product.color }}
+                    />
+                    {pp.product.display_name}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
           <div className="flex shrink-0 gap-6">
             <div className="text-right">
@@ -773,6 +802,40 @@ export function PropertyDetailPage() {
             </div>
           </div>
         </div>
+
+        {/* Product switcher */}
+        {propertyProducts.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-4 border-b border-gray-50 pb-0.5">
+            {propertyProducts.map((pp) => {
+              const active = pp.id === activeProductId
+              return (
+                <button
+                  key={pp.id}
+                  type="button"
+                  onClick={() => setSelectedProductId(pp.id)}
+                  className={cn(
+                    '-mb-px flex items-center gap-1.5 border-b-2 pb-1.5 text-xs font-semibold transition-colors',
+                    active ? '' : 'border-transparent text-gray-400',
+                  )}
+                  style={
+                    active
+                      ? {
+                          borderColor: pp.product.color,
+                          color: pp.product.color,
+                        }
+                      : undefined
+                  }
+                >
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ background: pp.product.color }}
+                  />
+                  {pp.product.display_name}
+                </button>
+              )
+            })}
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="mt-3 flex gap-0">
@@ -816,6 +879,15 @@ export function PropertyDetailPage() {
 
         {tab === 'overview' && (
           <div className="flex flex-col gap-4">
+            {activeProduct && (
+              <div className="flex items-center gap-2 text-[13px] font-semibold text-navy">
+                <span
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{ background: activeProduct.product.color }}
+                />
+                {activeProduct.product.display_name} Performance
+              </div>
+            )}
             <div className="grid grid-cols-[1.4fr_1fr_1fr_1fr_1fr_1fr] gap-3">
               {/* Overall */}
               <div className="flex items-center gap-4 rounded-2xl border border-gray-100 bg-white p-5">
@@ -881,9 +953,17 @@ export function PropertyDetailPage() {
           </div>
         )}
 
-        {tab === 'checklist' && (
-          <PropertyChecklistTab propertyId={property.id} />
-        )}
+        {tab === 'checklist' &&
+          (activeProductId ? (
+            <PropertyChecklistTab
+              propertyId={property.id}
+              propertyProductId={activeProductId}
+            />
+          ) : (
+            <div className="rounded-xl border border-gray-100 bg-white px-6 py-14 text-center text-[13px] text-muted">
+              No products assigned to this property.
+            </div>
+          ))}
 
         {tab === 'journal' && <PropertyJournalTab propertyId={property.id} />}
 

@@ -60,10 +60,13 @@ export const CHECKLIST_TOTAL_POINTS = 100
  * definition order_index. Shared cache key so the detail page hero cards and the
  * checklist tab read from a single fetch.
  */
-export function useChecklistItems(propertyId: string) {
+export function useChecklistItems(
+  propertyId: string,
+  propertyProductId?: string,
+) {
   return useQuery({
-    queryKey: ['checklist', propertyId],
-    enabled: !!propertyId,
+    queryKey: ['checklist', propertyId, propertyProductId],
+    enabled: !!propertyId && !!propertyProductId,
     queryFn: async (): Promise<ChecklistItem[]> => {
       const { data, error } = await supabase
         .from('property_checklist_items')
@@ -71,6 +74,7 @@ export function useChecklistItems(propertyId: string) {
           'id, status, assigned_to, completed_at, blocked_reason, notes, definition:operational_checklist_definitions(item_key, category, display_name, description, points, is_auto, order_index)',
         )
         .eq('property_id', propertyId)
+        .eq('property_product_id', propertyProductId as string)
       if (error) throw error
       const rows = (data ?? []) as unknown as ChecklistItem[]
       return rows

@@ -40,6 +40,13 @@ interface DashboardProperty {
   risk: RiskLevel
   tasks_complete: number
   tasks_total: number
+  products: DashboardProduct[]
+}
+
+interface DashboardProduct {
+  key: string
+  name: string
+  color: string
 }
 
 // ---------------------------------------------------------------------------
@@ -67,6 +74,15 @@ interface TaskCountRow {
 interface ContactRow {
   property_id: string
   user_id: string
+}
+
+interface PropertyProductRow {
+  property_id: string
+  product: {
+    product_key: string
+    display_name: string
+    color: string
+  } | null
 }
 
 function usePropertiesQuery() {
@@ -123,6 +139,22 @@ function useTechOwnersQuery() {
   })
 }
 
+function usePropertyProductsQuery() {
+  return useQuery({
+    queryKey: ['dashboard-property-products'],
+    queryFn: async (): Promise<PropertyProductRow[]> => {
+      const { data, error } = await supabase
+        .from('property_products')
+        .select(
+          'property_id, product:products(product_key, display_name, color)',
+        )
+        .order('created_at', { ascending: true })
+      if (error) throw error
+      return (data ?? []) as unknown as PropertyProductRow[]
+    },
+  })
+}
+
 function deriveRisk(overall: number): RiskLevel {
   if (overall === 0) return 'critical'
   if (overall >= 85) return 'low'
@@ -144,6 +176,7 @@ function buildProperties(
   props: PropertyQueryRow[],
   taskRows: TaskCountRow[],
   contacts: ContactRow[],
+  productRows: PropertyProductRow[],
 ): DashboardProperty[] {
   const agg = new Map<
     string,
@@ -179,6 +212,20 @@ function buildProperties(
     }
   }
 
+  // Property-wide product rollup: a property may hold several products, each
+  // seeded independently. Preserve first-seen order.
+  const productsByProperty = new Map<string, DashboardProduct[]>()
+  for (const row of productRows) {
+    if (!row.product) continue
+    const list = productsByProperty.get(row.property_id) ?? []
+    list.push({
+      key: row.product.product_key,
+      name: row.product.display_name,
+      color: row.product.color,
+    })
+    productsByProperty.set(row.property_id, list)
+  }
+
   return props.map((p) => {
     const a = agg.get(p.id)
     const total = a?.total ?? 0
@@ -187,12 +234,16 @@ function buildProperties(
     const config = a?.phase.configuration ?? emptyPhase()
     const prov = a?.phase.provisioning ?? emptyPhase()
 
+    // Divide by the actual phase task total (not a fixed 6/8/6) so the rollup
+    // stays 0–100 even when a property has multiple products.
     const ttv_data =
-      data.total > 0 ? Math.round((data.complete / 6) * 100) : null
+      data.total > 0 ? Math.round((data.complete / data.total) * 100) : null
     const ttv_config =
-      config.started > 0 ? Math.round((config.complete / 8) * 100) : null
+      config.started > 0
+        ? Math.round((config.complete / config.total) * 100)
+        : null
     const ttv_prov =
-      prov.started > 0 ? Math.round((prov.complete / 6) * 100) : null
+      prov.started > 0 ? Math.round((prov.complete / prov.total) * 100) : null
     const ttv_overall = total > 0 ? Math.round((complete / total) * 100) : 0
 
     const tech = techByProperty.get(p.id)
@@ -214,6 +265,7 @@ function buildProperties(
       risk: deriveRisk(ttv_overall),
       tasks_complete: complete,
       tasks_total: total,
+      products: productsByProperty.get(p.id) ?? [],
     }
   })
 }
@@ -357,6 +409,26 @@ function TaskProgress({
   )
 }
 
+function ProductDots({ products }: { products: DashboardProduct[] }) {
+  if (products.length === 0) {
+    return <span className="text-muted">—</span>
+  }
+  return (
+    <div className="flex items-center gap-1">
+      {products.slice(0, 4).map((product) => (
+        <span
+          key={product.key}
+          title={product.name}
+          className="flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold text-white"
+          style={{ background: product.color }}
+        >
+          {product.key.charAt(0).toUpperCase()}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 const SELECT_CLASS =
   'rounded-md border border-gray-100 bg-white px-2.5 py-1.5 text-xs text-gray-700 outline-none focus:border-gold'
 
@@ -373,6 +445,7 @@ export function DashboardPage() {
   const propertiesQuery = usePropertiesQuery()
   const taskCountsQuery = useTaskCountsQuery()
   const techOwnersQuery = useTechOwnersQuery()
+  const propertyProductsQuery = usePropertyProductsQuery()
 
   const isLoading = propertiesQuery.isLoading || taskCountsQuery.isLoading
   const isError = propertiesQuery.isError
@@ -383,8 +456,14 @@ export function DashboardPage() {
         propertiesQuery.data ?? [],
         taskCountsQuery.data ?? [],
         techOwnersQuery.data ?? [],
+        propertyProductsQuery.data ?? [],
       ),
-    [propertiesQuery.data, taskCountsQuery.data, techOwnersQuery.data],
+    [
+      propertiesQuery.data,
+      taskCountsQuery.data,
+      techOwnersQuery.data,
+      propertyProductsQuery.data,
+    ],
   )
 
   const regions = useMemo(
@@ -564,6 +643,7 @@ export function DashboardPage() {
                       <th className={TH_CLASS}>Property</th>
                       <th className={TH_CLASS}>State</th>
                       <th className={TH_CLASS}>Phase</th>
+                      <th className={TH_CLASS}>Products</th>
                       <th className={TH_CLASS}>Region</th>
                       <th className={TH_CLASS}>Tech Owner</th>
                       <th className={TH_CLASS}>Data TTV</th>
@@ -603,6 +683,9 @@ export function DashboardPage() {
                           ) : (
                             <span className="text-muted">—</span>
                           )}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <ProductDots products={p.products} />
                         </td>
                         <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px]">
                           {p.region || '—'}

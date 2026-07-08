@@ -137,9 +137,15 @@ function CategorySection({
 // Tab
 // ---------------------------------------------------------------------------
 
-export function PropertyChecklistTab({ propertyId }: { propertyId: string }) {
+export function PropertyChecklistTab({
+  propertyId,
+  propertyProductId,
+}: {
+  propertyId: string
+  propertyProductId: string
+}) {
   const queryClient = useQueryClient()
-  const query = useChecklistItems(propertyId)
+  const query = useChecklistItems(propertyId, propertyProductId)
 
   const updateStatus = useMutation({
     mutationFn: async ({

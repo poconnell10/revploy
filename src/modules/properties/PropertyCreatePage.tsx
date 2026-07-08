@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useForm, type UseFormRegister } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -10,6 +10,7 @@ import {
 import { useNavigate } from 'react-router-dom'
 
 import { supabase } from '@/shared/lib/supabase'
+import { useProducts } from '@/shared/products/products'
 import { cn } from '@/shared/lib/utils'
 
 const TIMEZONES = [
@@ -170,6 +171,22 @@ export function PropertyCreatePage() {
   const regions = useEntities('regions')
   const brands = useEntities('brands')
   const owners = useEntities('owners')
+  const productsQuery = useProducts()
+
+  const [selectedProducts, setSelectedProducts] = useState<Set<string>>(
+    new Set(),
+  )
+  const [productError, setProductError] = useState(false)
+
+  const toggleProduct = (productId: string) => {
+    setProductError(false)
+    setSelectedProducts((prev) => {
+      const next = new Set(prev)
+      if (next.has(productId)) next.delete(productId)
+      else next.add(productId)
+      return next
+    })
+  }
 
   const {
     register,
@@ -191,9 +208,13 @@ export function PropertyCreatePage() {
   })
 
   const createProperty = useMutation({
-    mutationFn: async (
-      values: FormValues,
-    ): Promise<{ propertyId: string; warnings: string[] }> => {
+    mutationFn: async ({
+      values,
+      productIds,
+    }: {
+      values: FormValues
+      productIds: string[]
+    }): Promise<{ propertyId: string; warnings: string[] }> => {
       const { data: code, error: codeError } = await supabase.rpc(
         'generate_display_code',
         { p_prefix: 'PRP' },
@@ -223,42 +244,63 @@ export function PropertyCreatePage() {
 
       const propertyId = inserted.id as string
 
-      // The property row already exists, so the two seeding RPCs are treated as
-      // best-effort: a failure here is logged and surfaced as a warning rather
-      // than discarding the created property or blocking navigation to it.
+      // Each selected product gets its own property_products row plus its own
+      // set of 20 tasks + 22 checklist items. The product link is the hard
+      // step; the two seeding RPCs are best-effort (logged + surfaced as a
+      // warning) so navigation to the new property is never blocked.
       const warnings: string[] = []
 
-      const { error: tasksError } = await supabase.rpc(
-        'create_property_tasks',
-        {
-          p_property_id: propertyId,
-        },
-      )
-      if (tasksError) {
-        console.error(
-          '[property-create] create_property_tasks failed',
-          tasksError,
+      for (const productId of productIds) {
+        const { data: pp, error: ppError } = await supabase
+          .from('property_products')
+          .insert({
+            property_id: propertyId,
+            product_id: productId,
+            lifecycle_state: 'onboarding',
+            phase_current: 'data',
+          })
+          .select('id')
+          .single()
+        if (ppError) throw ppError
+
+        const propertyProductId = pp.id as string
+
+        const { error: tasksError } = await supabase.rpc(
+          'create_product_tasks',
+          {
+            p_property_id: propertyId,
+            p_property_product_id: propertyProductId,
+          },
         )
-        warnings.push(
-          'Property created but lifecycle tasks could not be seeded. Please contact support.',
+        if (tasksError) {
+          console.error(
+            '[property-create] create_product_tasks failed',
+            tasksError,
+          )
+          warnings.push(
+            'Property created but some product tasks could not be seeded. Please contact support.',
+          )
+        }
+
+        const { error: checklistError } = await supabase.rpc(
+          'create_product_checklist_items',
+          {
+            p_property_id: propertyId,
+            p_property_product_id: propertyProductId,
+          },
         )
+        if (checklistError) {
+          console.error(
+            '[property-create] create_product_checklist_items failed',
+            checklistError,
+          )
+          warnings.push(
+            'Property created but some product checklist items could not be seeded. Please contact support.',
+          )
+        }
       }
 
-      const { error: checklistError } = await supabase.rpc(
-        'create_property_checklist_items',
-        { p_property_id: propertyId },
-      )
-      if (checklistError) {
-        console.error(
-          '[property-create] create_property_checklist_items failed',
-          checklistError,
-        )
-        warnings.push(
-          'Property created but checklist items could not be seeded. Please contact support.',
-        )
-      }
-
-      return { propertyId, warnings }
+      return { propertyId, warnings: Array.from(new Set(warnings)) }
     },
     onSuccess: ({ propertyId, warnings }) =>
       navigate(`/properties/${propertyId}`, {
@@ -266,7 +308,13 @@ export function PropertyCreatePage() {
       }),
   })
 
-  const onSubmit = handleSubmit((values) => createProperty.mutate(values))
+  const onSubmit = handleSubmit((values) => {
+    if (selectedProducts.size === 0) {
+      setProductError(true)
+      return
+    }
+    createProperty.mutate({ values, productIds: Array.from(selectedProducts) })
+  })
 
   return (
     <div className="mx-auto max-w-[720px]">
@@ -371,7 +419,65 @@ export function PropertyCreatePage() {
           />
         </div>
 
-        {/* Section 3 — Timeline */}
+        {/* Section 3 — Products */}
+        <SectionHeading className="mt-7">Products</SectionHeading>
+        <p className="-mt-2 mb-4 text-[13px] text-muted">
+          Select the FPG products this property will use. At least one product
+          is required.
+        </p>
+        {productsQuery.isLoading ? (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={i}
+                className="h-[72px] animate-pulse rounded-lg bg-gray-100"
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {(productsQuery.data ?? []).map((product) => {
+              const selected = selectedProducts.has(product.id)
+              return (
+                <label
+                  key={product.id}
+                  className={cn(
+                    'flex cursor-pointer items-start gap-3 rounded-lg border p-3.5 transition-colors',
+                    selected
+                      ? 'border-gold bg-gold-light'
+                      : 'border-gray-100 bg-white hover:bg-gray-50',
+                  )}
+                >
+                  <span
+                    className="mt-1 h-3 w-3 shrink-0 rounded-full"
+                    style={{ background: product.color }}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-bold text-navy">
+                      {product.display_name}
+                    </div>
+                    <div className="text-xs text-gray-400">
+                      {product.description}
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    onChange={() => toggleProduct(product.id)}
+                    className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-gold"
+                  />
+                </label>
+              )
+            })}
+          </div>
+        )}
+        {productError && (
+          <p className="mt-2 text-xs text-danger">
+            At least one product must be selected.
+          </p>
+        )}
+
+        {/* Section 4 — Timeline */}
         <SectionHeading className="mt-7">Timeline</SectionHeading>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field
