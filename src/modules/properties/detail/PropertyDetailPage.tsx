@@ -67,6 +67,7 @@ interface TaskRow {
   completed_at: string | null
   due_date: string | null
   blocked_reason: string | null
+  notes: string | null
   definition: TaskDefinition
 }
 
@@ -120,6 +121,23 @@ function formatDate(dateStr: string | null, withYear = true): string {
   })
 }
 
+/** Format a full timestamptz (e.g. completed_at) as "Jul 7, 2026". */
+function formatTimestamp(iso: string | null): string {
+  if (!iso) return '—'
+  const dt = new Date(iso)
+  if (Number.isNaN(dt.getTime())) return '—'
+  return dt.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+/** Today as an ISO date string (YYYY-MM-DD) for date columns/inputs. */
+function todayStr(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
 function ttvHex(score: number | null): string {
   if (score === null) return 'var(--color-muted)'
   if (score >= 85) return 'var(--color-success)'
@@ -170,7 +188,7 @@ function useTasks(id: string, propertyProductId: string | undefined) {
       const { data, error } = await supabase
         .from('property_lifecycle_tasks')
         .select(
-          'id, property_product_id, status, assigned_to, completed_at, due_date, blocked_reason, definition:lifecycle_task_definitions(task_key, phase, display_name, required_role, is_phase_gate, completion_mode, order_index)',
+          'id, property_product_id, status, assigned_to, completed_at, due_date, blocked_reason, notes, definition:lifecycle_task_definitions(task_key, phase, display_name, required_role, is_phase_gate, completion_mode, order_index)',
         )
         .eq('property_id', id)
         .eq('property_product_id', propertyProductId as string)
@@ -626,6 +644,219 @@ function PhaseSection({
 }
 
 // ---------------------------------------------------------------------------
+// Data phase — enhanced interactive rows (assignee, editable dates, notes)
+// ---------------------------------------------------------------------------
+
+const FIELD_LABEL =
+  'mb-1.5 text-[11px] font-medium uppercase tracking-wide text-gray-400'
+const DATA_INPUT =
+  'w-full rounded-lg border border-gray-100 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:border-gold focus:ring-1 focus:ring-gold'
+
+function DataTaskRow({
+  task,
+  onStatusCycle,
+  onDueDate,
+  onNotes,
+}: {
+  task: TaskRow
+  onStatusCycle: (task: TaskRow) => void
+  onDueDate: (taskId: string, date: string) => void
+  onNotes: (taskId: string, value: string) => void
+}) {
+  const def = task.definition
+  const [expanded, setExpanded] = useState(false)
+  const [flash, setFlash] = useState(false)
+  const [dateVal, setDateVal] = useState<string>(task.due_date ?? todayStr())
+  const [notesVal, setNotesVal] = useState<string>(task.notes ?? '')
+
+  useEffect(() => {
+    if (task.due_date) setDateVal(task.due_date)
+  }, [task.due_date])
+  useEffect(() => {
+    setNotesVal(task.notes ?? '')
+  }, [task.notes])
+
+  // assigned_to is a user UUID (auth.users email isn't reachable from the
+  // client), so it stands in for the "email" the design references.
+  const assigneeInitial = task.assigned_to
+    ? task.assigned_to.charAt(0).toUpperCase()
+    : null
+
+  return (
+    <div className="rounded-xl border border-gray-100 bg-white">
+      <div
+        onClick={() => setExpanded((v) => !v)}
+        className="flex cursor-pointer items-center gap-3 p-4"
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="min-w-0 flex-1 text-sm font-medium text-navy">
+            {def.display_name}
+          </span>
+          {def.is_phase_gate && (
+            <span className="shrink-0 whitespace-nowrap rounded border border-[#fde8a5] bg-gold-light px-1.5 py-0.5 text-[10px] font-semibold text-warning">
+              Phase Gate
+            </span>
+          )}
+          {def.completion_mode === 'auto_with_override' && (
+            <span className="shrink-0 whitespace-nowrap rounded bg-info-subtle px-1.5 py-0.5 text-[10px] font-medium text-info">
+              Auto
+            </span>
+          )}
+          <span className="shrink-0 whitespace-nowrap rounded bg-gray-50 px-1.5 py-0.5 text-[10px] capitalize text-muted">
+            {def.required_role}
+          </span>
+        </div>
+
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            setFlash(true)
+            window.setTimeout(() => setFlash(false), 350)
+            onStatusCycle(task)
+          }}
+          className="shrink-0 cursor-pointer rounded-[20px]"
+          style={{
+            boxShadow: flash
+              ? '0 0 0 3px rgba(245,166,35,0.5)'
+              : '0 0 0 0 rgba(245,166,35,0)',
+            transition: 'box-shadow 350ms ease',
+          }}
+        >
+          <StatusBadge status={task.status} />
+        </button>
+
+        {assigneeInitial ? (
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gold text-[10px] font-bold text-navy">
+            {assigneeInitial}
+          </span>
+        ) : (
+          <span className="w-6 shrink-0" />
+        )}
+
+        <span className="w-[70px] shrink-0 text-right font-mono text-[11px] text-gray-400">
+          {task.due_date ? formatDate(task.due_date, false) : '—'}
+        </span>
+        <span className="w-4 shrink-0 text-center text-sm text-muted">
+          {expanded ? '▴' : '▾'}
+        </span>
+      </div>
+
+      {expanded && (
+        <div className="grid grid-cols-1 gap-4 border-t border-gray-50 bg-gray-50/60 px-4 py-4 sm:grid-cols-2">
+          {/* Assignee */}
+          <div>
+            <div className={FIELD_LABEL}>Assigned To</div>
+            {task.assigned_to ? (
+              <div className="flex items-center gap-2">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gold text-xs font-bold text-navy">
+                  {assigneeInitial}
+                </span>
+                <span className="truncate text-[13px] text-gray-700">
+                  {task.assigned_to.slice(0, 20)}
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-bold text-muted">
+                  —
+                </span>
+                <span className="text-[13px] text-muted">Unassigned</span>
+              </div>
+            )}
+          </div>
+
+          {/* Start Date */}
+          <div>
+            <div className={FIELD_LABEL}>Start Date</div>
+            <input
+              type="date"
+              value={dateVal}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                setDateVal(e.target.value)
+                onDueDate(task.id, e.target.value)
+              }}
+              className={DATA_INPUT}
+            />
+          </div>
+
+          {/* Completed */}
+          <div>
+            <div className={FIELD_LABEL}>Completed</div>
+            <div
+              className={cn(
+                'text-[13px]',
+                task.status === 'complete' ? 'text-gray-700' : 'text-gray-400',
+              )}
+            >
+              {task.status === 'complete'
+                ? formatTimestamp(task.completed_at)
+                : '—'}
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div className="sm:col-span-2">
+            <div className={FIELD_LABEL}>Notes</div>
+            <textarea
+              rows={3}
+              value={notesVal}
+              placeholder="Add task notes..."
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => setNotesVal(e.target.value)}
+              onBlur={() => {
+                if ((task.notes ?? '') !== notesVal) onNotes(task.id, notesVal)
+              }}
+              className={cn(DATA_INPUT, 'resize-none')}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function DataPhaseSection({
+  score,
+  tasks,
+  onStatusCycle,
+  onDueDate,
+  onNotes,
+}: {
+  score: number | null
+  tasks: TaskRow[]
+  onStatusCycle: (task: TaskRow) => void
+  onDueDate: (taskId: string, date: string) => void
+  onNotes: (taskId: string, value: string) => void
+}) {
+  return (
+    <div className="flex flex-col gap-2.5">
+      <div className="flex items-center gap-2.5">
+        <span
+          className="h-2 w-2 shrink-0 rounded-full"
+          style={{ background: PHASE_HEX.data }}
+        />
+        <span className="text-sm font-semibold text-navy">Data Phase</span>
+        <TTVBadge score={score} size="sm" />
+        <span className="text-xs text-muted">
+          {PHASE_TASK_TOTAL.data} tasks
+        </span>
+      </div>
+      {tasks.map((t) => (
+        <DataTaskRow
+          key={t.id}
+          task={t}
+          onStatusCycle={onStatusCycle}
+          onDueDate={onDueDate}
+          onNotes={onNotes}
+        />
+      ))}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
@@ -690,6 +921,106 @@ export function PropertyDetailPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks', id] }),
   })
 
+  // Data-phase status change: applies the full transition rules (assignee /
+  // due date / completed metadata) and optimistically patches the cache so the
+  // Data TTV badge recomputes immediately.
+  const tasksKey = ['tasks', id, activeProductId]
+  const dataStatusMutation = useMutation({
+    mutationFn: async ({
+      task,
+      newStatus,
+    }: {
+      task: TaskRow
+      newStatus: TaskStatus
+    }) => {
+      const { data: userData } = await supabase.auth.getUser()
+      const uid = userData.user?.id ?? null
+      const now = new Date().toISOString()
+      const patch: Record<string, unknown> = {
+        status: newStatus,
+        updated_at: now,
+      }
+      if (newStatus === 'complete') {
+        patch.completed_at = now
+        patch.completed_by = uid
+      }
+      if (task.status === 'complete' && newStatus !== 'complete') {
+        patch.completed_at = null
+        patch.completed_by = null
+      }
+      if (task.status === 'not_started' && newStatus === 'in_progress') {
+        patch.assigned_to = uid
+        patch.due_date = todayStr()
+      }
+      if (newStatus === 'not_started') {
+        patch.assigned_to = null
+        patch.due_date = null
+        patch.completed_at = null
+        patch.completed_by = null
+      }
+      const { error } = await supabase
+        .from('property_lifecycle_tasks')
+        .update(patch)
+        .eq('id', task.id)
+      if (error) throw error
+    },
+    onMutate: async ({ task, newStatus }) => {
+      await queryClient.cancelQueries({ queryKey: tasksKey })
+      const previous = queryClient.getQueryData<TaskRow[]>(tasksKey)
+      const optimistic: Partial<TaskRow> = { status: newStatus }
+      if (newStatus === 'complete')
+        optimistic.completed_at = new Date().toISOString()
+      if (task.status === 'complete' && newStatus !== 'complete')
+        optimistic.completed_at = null
+      if (task.status === 'not_started' && newStatus === 'in_progress')
+        optimistic.due_date = todayStr()
+      if (newStatus === 'not_started') {
+        optimistic.assigned_to = null
+        optimistic.due_date = null
+        optimistic.completed_at = null
+      }
+      queryClient.setQueryData<TaskRow[]>(tasksKey, (old) =>
+        old?.map((t) => (t.id === task.id ? { ...t, ...optimistic } : t)),
+      )
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.previous) queryClient.setQueryData(tasksKey, ctx.previous)
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['tasks', id] }),
+  })
+
+  const dueDateMutation = useMutation({
+    mutationFn: async ({ taskId, date }: { taskId: string; date: string }) => {
+      const { error } = await supabase
+        .from('property_lifecycle_tasks')
+        .update({
+          due_date: date || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', taskId)
+      if (error) throw error
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks', id] }),
+  })
+
+  const notesMutation = useMutation({
+    mutationFn: async ({
+      taskId,
+      value,
+    }: {
+      taskId: string
+      value: string
+    }) => {
+      const { error } = await supabase
+        .from('property_lifecycle_tasks')
+        .update({ notes: value, updated_at: new Date().toISOString() })
+        .eq('id', taskId)
+      if (error) throw error
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks', id] }),
+  })
+
   if (propertyQuery.isLoading) {
     return <PropertyDetailSkeleton />
   }
@@ -746,6 +1077,13 @@ export function PropertyDetailPage() {
 
   const onCycle = (taskId: string, newStatus: TaskStatus) =>
     updateStatus.mutate({ taskId, newStatus })
+
+  const onDataStatusCycle = (task: TaskRow) =>
+    dataStatusMutation.mutate({ task, newStatus: NEXT_STATUS[task.status] })
+  const onDataDueDate = (taskId: string, date: string) =>
+    dueDateMutation.mutate({ taskId, date })
+  const onDataNotes = (taskId: string, value: string) =>
+    notesMutation.mutate({ taskId, value })
 
   const days = daysSince(property.start_date)
 
@@ -943,13 +1281,12 @@ export function PropertyDetailPage() {
 
         {tab === 'tasks' && (
           <div className="flex flex-col gap-5">
-            <PhaseSection
-              phase="data"
-              title="Data Phase"
+            <DataPhaseSection
               score={dataTtv}
               tasks={dataTasks}
-              gated={false}
-              onCycle={onCycle}
+              onStatusCycle={onDataStatusCycle}
+              onDueDate={onDataDueDate}
+              onNotes={onDataNotes}
             />
             <PhaseSection
               phase="configuration"
