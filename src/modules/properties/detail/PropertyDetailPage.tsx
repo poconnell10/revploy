@@ -169,10 +169,27 @@ function useTasks(id: string, propertyProductId: string | undefined) {
       const { data, error } = await supabase
         .from('property_lifecycle_tasks')
         .select(
-          'id, status, assigned_to, completed_at, due_date, blocked_reason, definition:lifecycle_task_definitions(task_key, phase, display_name, required_role, is_phase_gate, completion_mode, order_index)',
+          'id, property_product_id, status, assigned_to, completed_at, due_date, blocked_reason, definition:lifecycle_task_definitions(task_key, phase, display_name, required_role, is_phase_gate, completion_mode, order_index)',
         )
         .eq('property_id', id)
         .eq('property_product_id', propertyProductId as string)
+      // TEMP diagnostic: confirms the tasks query re-runs per product switch and
+      // shows what the WHERE property_product_id filter actually returns.
+      console.log('[tasks] queryFn →', {
+        activeProductId: propertyProductId,
+        filter: `property_id=${id} AND property_product_id=${propertyProductId}`,
+        rowsReturned: data?.length ?? 0,
+        rowProductIds: [
+          ...new Set(
+            (data ?? []).map(
+              (r) =>
+                (r as { property_product_id: string | null })
+                  .property_product_id,
+            ),
+          ),
+        ],
+        error,
+      })
       if (error) throw error
       const rows = (data ?? []) as unknown as TaskRow[]
       return rows
