@@ -78,6 +78,30 @@ interface ContactRow {
   role_type: string
 }
 
+type Department = 'tech' | 'operations' | 'sales' | 'customer_success'
+
+interface Profile {
+  id: string
+  full_name: string
+  email: string
+  department: Department | null
+  avatar_initials: string | null
+}
+
+const DEPARTMENT_LABEL: Record<Department, string> = {
+  tech: 'Tech',
+  operations: 'Operations',
+  sales: 'Sales',
+  customer_success: 'Customer Success',
+}
+
+const DEPARTMENT_CLASS: Record<Department, string> = {
+  tech: 'bg-info-subtle text-info',
+  operations: 'bg-purple-subtle text-purple',
+  sales: 'bg-warning-subtle text-warning',
+  customer_success: 'bg-success-subtle text-success',
+}
+
 type Tab = 'overview' | 'tasks' | 'checklist' | 'journal' | 'settings'
 
 // Phase dot colors — kept distinct from product colors (DeskMax is #7c3aed).
@@ -214,6 +238,19 @@ function useContacts(id: string) {
         .eq('active', true)
       if (error) throw error
       return (data ?? []) as ContactRow[]
+    },
+  })
+}
+
+function useProfiles() {
+  return useQuery({
+    queryKey: ['profiles'],
+    queryFn: async (): Promise<Profile[]> => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, email, department, avatar_initials')
+      if (error) throw error
+      return (data ?? []) as Profile[]
     },
   })
 }
@@ -726,22 +763,119 @@ function StatusDropdown({
   )
 }
 
+function DepartmentChip({ department }: { department: Department | null }) {
+  if (!department) return null
+  return (
+    <span
+      className={cn(
+        'shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-medium',
+        DEPARTMENT_CLASS[department],
+      )}
+    >
+      {DEPARTMENT_LABEL[department]}
+    </span>
+  )
+}
+
+/** Dropdown that lists every profile and assigns the task to the chosen one. */
+function AssignPicker({
+  profiles,
+  onAssign,
+}: {
+  profiles: Profile[]
+  onAssign: (profileId: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <div ref={ref} className="relative mt-2">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          setOpen((v) => !v)
+        }}
+        className="rounded-md border border-gray-100 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-50"
+      >
+        Assign →
+      </button>
+      {open && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="absolute left-0 top-full z-20 mt-1 max-h-56 w-60 overflow-auto rounded-lg border border-gray-100 bg-white"
+          style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.12)' }}
+        >
+          {profiles.length === 0 ? (
+            <div className="px-3 py-2 text-[12px] text-muted">
+              No profiles found
+            </div>
+          ) : (
+            profiles.map((pf) => (
+              <button
+                key={pf.id}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setOpen(false)
+                  onAssign(pf.id)
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-gray-50"
+              >
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gold text-[10px] font-bold text-navy">
+                  {pf.avatar_initials ?? pf.full_name.charAt(0).toUpperCase()}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[12px] text-gray-700">
+                  {pf.full_name}
+                </span>
+                <DepartmentChip department={pf.department} />
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function DataTaskRow({
   task,
   isLast,
   currentUserId,
+  profiles,
+  getProfile,
   onStatus,
   onDueDate,
   onNotes,
   onBlockedReason,
+  onAssign,
 }: {
   task: TaskRow
   isLast: boolean
   currentUserId: string | null
+  profiles: Profile[]
+  getProfile: (userId: string | null) => Profile | undefined
   onStatus: (task: TaskRow, next: TaskStatus) => void
   onDueDate: (taskId: string, date: string) => void
   onNotes: (taskId: string, value: string, taskName: string) => void
   onBlockedReason: (taskId: string, value: string) => void
+  onAssign: (taskId: string, profileId: string) => void
 }) {
   const def = task.definition
   const [expanded, setExpanded] = useState(false)
@@ -792,11 +926,16 @@ function DataTaskRow({
     setBlockedVal(task.blocked_reason ?? '')
   }, [task.blocked_reason])
 
-  // assigned_to is a user UUID (auth.users email isn't reachable from the
-  // client), so it stands in for the "email" the design references.
+  // Resolve the assignee to a real profile when available; fall back to the
+  // raw UUID so pre-profiles assignments still render something.
+  const assigneeProfile = getProfile(task.assigned_to)
   const assigneeInitial = task.assigned_to
-    ? task.assigned_to.charAt(0).toUpperCase()
+    ? (assigneeProfile?.avatar_initials ??
+      task.assigned_to.charAt(0).toUpperCase())
     : null
+  const assigneeName =
+    assigneeProfile?.full_name ??
+    (task.assigned_to ? `${task.assigned_to.slice(0, 18)}…` : null)
 
   return (
     <div style={{ borderBottom: isLast ? 'none' : '1px solid #f4f6f9' }}>
@@ -882,13 +1021,20 @@ function DataTaskRow({
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gold text-[10px] font-bold text-navy">
                   {assigneeInitial}
                 </span>
-                <span className="truncate text-[12px] text-gray-700">
-                  {task.assigned_to.slice(0, 18)}
+                <span className="min-w-0 truncate text-[12px] text-gray-700">
+                  {assigneeName}
                 </span>
+                <DepartmentChip
+                  department={assigneeProfile?.department ?? null}
+                />
               </div>
             ) : (
               <div className="text-[12px] text-muted">Unassigned</div>
             )}
+            <AssignPicker
+              profiles={profiles}
+              onAssign={(profileId) => onAssign(task.id, profileId)}
+            />
           </div>
 
           {/* Dates */}
@@ -954,18 +1100,24 @@ function DataPhaseSection({
   score,
   tasks,
   currentUserId,
+  profiles,
+  getProfile,
   onStatus,
   onDueDate,
   onNotes,
   onBlockedReason,
+  onAssign,
 }: {
   score: number | null
   tasks: TaskRow[]
   currentUserId: string | null
+  profiles: Profile[]
+  getProfile: (userId: string | null) => Profile | undefined
   onStatus: (task: TaskRow, next: TaskStatus) => void
   onDueDate: (taskId: string, date: string) => void
   onNotes: (taskId: string, value: string, taskName: string) => void
   onBlockedReason: (taskId: string, value: string) => void
+  onAssign: (taskId: string, profileId: string) => void
 }) {
   return (
     <div className="flex flex-col gap-2.5">
@@ -987,10 +1139,13 @@ function DataPhaseSection({
             task={t}
             isLast={i === tasks.length - 1}
             currentUserId={currentUserId}
+            profiles={profiles}
+            getProfile={getProfile}
             onStatus={onStatus}
             onDueDate={onDueDate}
             onNotes={onNotes}
             onBlockedReason={onBlockedReason}
+            onAssign={onAssign}
           />
         ))}
       </div>
@@ -1019,6 +1174,11 @@ export function PropertyDetailPage() {
   const propertyQuery = useProperty(id)
   const contactsQuery = useContacts(id)
   const productsQuery = usePropertyProducts(id)
+  const profilesQuery = useProfiles()
+
+  const profiles = profilesQuery.data ?? []
+  const getProfile = (userId: string | null) =>
+    userId ? profiles.find((p) => p.id === userId) : undefined
 
   const propertyProducts = productsQuery.data ?? []
   const [selectedProductId, setSelectedProductId] = useState<string>()
@@ -1187,6 +1347,26 @@ export function PropertyDetailPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks', id] }),
   })
 
+  const assignMutation = useMutation({
+    mutationFn: async ({
+      taskId,
+      profileId,
+    }: {
+      taskId: string
+      profileId: string
+    }) => {
+      const { error } = await supabase
+        .from('property_lifecycle_tasks')
+        .update({
+          assigned_to: profileId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', taskId)
+      if (error) throw error
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks', id] }),
+  })
+
   // Saving a task note also drops a linked entry into the property journal.
   const notesMutation = useMutation({
     mutationFn: async ({
@@ -1291,6 +1471,8 @@ export function PropertyDetailPage() {
     notesMutation.mutate({ taskId, value, taskName })
   const onDataBlockedReason = (taskId: string, value: string) =>
     blockedReasonMutation.mutate({ taskId, value })
+  const onDataAssign = (taskId: string, profileId: string) =>
+    assignMutation.mutate({ taskId, profileId })
 
   const days = daysSince(property.start_date)
 
@@ -1492,10 +1674,13 @@ export function PropertyDetailPage() {
               score={dataTtv}
               tasks={dataTasks}
               currentUserId={currentUserId}
+              profiles={profiles}
+              getProfile={getProfile}
               onStatus={onDataStatus}
               onDueDate={onDataDueDate}
               onNotes={onDataNotes}
               onBlockedReason={onDataBlockedReason}
+              onAssign={onDataAssign}
             />
             <PhaseSection
               phase="configuration"
