@@ -11,6 +11,7 @@ import { PropertyDetailPage } from '@/modules/properties/detail/PropertyDetailPa
 import { BrandsPage } from '@/modules/admin/brands/BrandsPage'
 import { OwnersPage } from '@/modules/admin/owners/OwnersPage'
 import { RegionsPage } from '@/modules/admin/regions/RegionsPage'
+import { EventLogsPage } from '@/modules/logs/EventLogsPage'
 
 /** Gate a subtree behind one or more roles; redirect elsewhere if unauthorized. */
 function RequireRole({
@@ -120,7 +121,11 @@ export function AppRoutes() {
 
       <Route
         path="/logs"
-        element={<Shell title="Event Logs">{<div>Event Logs</div>}</Shell>}
+        element={
+          <Shell title="Event Logs">
+            <EventLogsPage />
+          </Shell>
+        }
       />
     </Routes>
   )
