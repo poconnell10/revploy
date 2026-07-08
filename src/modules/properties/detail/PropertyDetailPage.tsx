@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useLocation, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
@@ -611,8 +611,15 @@ function PhaseSection({
 
 export function PropertyDetailPage() {
   const { id = '' } = useParams<{ id: string }>()
+  const location = useLocation()
   const queryClient = useQueryClient()
   const [tab, setTab] = useState<Tab>('overview')
+
+  // Seeding warnings passed from the create flow (e.g. tasks/checklist RPC
+  // failed after the property was created). Dismissible; shown once.
+  const seedWarnings =
+    (location.state as { seedWarnings?: string[] } | null)?.seedWarnings ?? []
+  const [warningsDismissed, setWarningsDismissed] = useState(false)
 
   const propertyQuery = useProperty(id)
   const tasksQuery = useTasks(id)
@@ -789,6 +796,24 @@ export function PropertyDetailPage() {
 
       {/* Tab content */}
       <div className="pt-6">
+        {seedWarnings.length > 0 && !warningsDismissed && (
+          <div className="mb-4 flex items-start gap-3 rounded-lg border border-warning-border bg-warning-subtle px-4 py-3">
+            <span className="shrink-0 text-warning">⚠</span>
+            <div className="flex-1 text-[13px] text-warning-strong">
+              {seedWarnings.map((w, i) => (
+                <div key={i}>{w}</div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setWarningsDismissed(true)}
+              className="shrink-0 text-xs font-medium text-warning-strong transition-opacity hover:opacity-70"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
         {tab === 'overview' && (
           <div className="flex flex-col gap-4">
             <div className="grid grid-cols-[1.4fr_1fr_1fr_1fr_1fr_1fr] gap-3">

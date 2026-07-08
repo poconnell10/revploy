@@ -191,7 +191,9 @@ export function PropertyCreatePage() {
   })
 
   const createProperty = useMutation({
-    mutationFn: async (values: FormValues): Promise<string> => {
+    mutationFn: async (
+      values: FormValues,
+    ): Promise<{ propertyId: string; warnings: string[] }> => {
       const { data: code, error: codeError } = await supabase.rpc(
         'generate_display_code',
         { p_prefix: 'PRP' },
@@ -220,25 +222,48 @@ export function PropertyCreatePage() {
       if (insertError) throw insertError
 
       const propertyId = inserted.id as string
+
+      // The property row already exists, so the two seeding RPCs are treated as
+      // best-effort: a failure here is logged and surfaced as a warning rather
+      // than discarding the created property or blocking navigation to it.
+      const warnings: string[] = []
+
       const { error: tasksError } = await supabase.rpc(
         'create_property_tasks',
         {
           p_property_id: propertyId,
         },
       )
-      if (tasksError) throw tasksError
+      if (tasksError) {
+        console.error(
+          '[property-create] create_property_tasks failed',
+          tasksError,
+        )
+        warnings.push(
+          'Property created but lifecycle tasks could not be seeded. Please contact support.',
+        )
+      }
 
       const { error: checklistError } = await supabase.rpc(
         'create_property_checklist_items',
-        {
-          p_property_id: propertyId,
-        },
+        { p_property_id: propertyId },
       )
-      if (checklistError) throw checklistError
+      if (checklistError) {
+        console.error(
+          '[property-create] create_property_checklist_items failed',
+          checklistError,
+        )
+        warnings.push(
+          'Property created but checklist items could not be seeded. Please contact support.',
+        )
+      }
 
-      return propertyId
+      return { propertyId, warnings }
     },
-    onSuccess: (propertyId) => navigate(`/properties/${propertyId}`),
+    onSuccess: ({ propertyId, warnings }) =>
+      navigate(`/properties/${propertyId}`, {
+        state: warnings.length > 0 ? { seedWarnings: warnings } : undefined,
+      }),
   })
 
   const onSubmit = handleSubmit((values) => createProperty.mutate(values))
