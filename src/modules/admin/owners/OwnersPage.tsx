@@ -6,7 +6,8 @@ import { supabase } from '@/shared/lib/supabase'
 import { cn } from '@/shared/lib/utils'
 import { AdminModal } from '../shared/AdminModal'
 
-type OwnerType = 'reit' | 'pe_fund' | 'independent' | 'other'
+type OwnerType =
+  'reit' | 'pe_fund' | 'independent' | 'other' | 'management_company'
 
 interface Owner {
   id: string
@@ -20,6 +21,7 @@ const OWNER_TYPES: { value: OwnerType; label: string }[] = [
   { value: 'reit', label: 'REIT' },
   { value: 'pe_fund', label: 'PE Fund' },
   { value: 'independent', label: 'Independent' },
+  { value: 'management_company', label: 'Management Company' },
   { value: 'other', label: 'Other' },
 ]
 
@@ -27,6 +29,7 @@ const OWNER_TYPE_LABEL: Record<OwnerType, string> = {
   reit: 'REIT',
   pe_fund: 'PE Fund',
   independent: 'Independent',
+  management_company: 'Management Company',
   other: 'Other',
 }
 
@@ -34,6 +37,7 @@ const OWNER_TYPE_CLASS: Record<OwnerType, string> = {
   reit: 'bg-info-subtle text-info',
   pe_fund: 'bg-purple-subtle text-purple',
   independent: 'bg-success-subtle text-success',
+  management_company: 'bg-gray-100 text-navy',
   other: 'bg-gray-50 text-muted',
 }
 
