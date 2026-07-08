@@ -16,6 +16,7 @@ import {
   type TaskStatus,
 } from '@/shared/components/primitives'
 import { supabase } from '@/shared/lib/supabase'
+import { useAuth } from '@/shared/rbac/auth-context'
 import { usePropertyProducts } from '@/shared/products/products'
 import { cn } from '@/shared/lib/utils'
 
@@ -663,9 +664,12 @@ const UNDERLINE_INPUT =
 /** Status badge that opens a small dropdown menu to pick a new status. */
 function StatusDropdown({
   status,
+  disabled,
   onSelect,
 }: {
   status: TaskStatus
+  /** Per-status disabled reason; when present the option is greyed with a tooltip. */
+  disabled?: Partial<Record<TaskStatus, string>>
   onSelect: (next: TaskStatus) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -707,20 +711,26 @@ function StatusDropdown({
         >
           {STATUS_OPTIONS.map((opt) => {
             const active = opt.value === status
+            const disabledReason = disabled?.[opt.value]
             return (
               <button
                 key={opt.value}
                 type="button"
+                disabled={!!disabledReason}
+                title={disabledReason}
                 onClick={(e) => {
                   e.stopPropagation()
+                  if (disabledReason) return
                   setOpen(false)
                   if (opt.value !== status) onSelect(opt.value)
                 }}
                 className={cn(
                   'flex h-8 w-full items-center px-4 text-left text-[13px] transition-colors',
-                  active
-                    ? 'bg-gold-light font-semibold text-warning'
-                    : 'text-gray-700 hover:bg-gray-50',
+                  disabledReason
+                    ? 'cursor-not-allowed text-gray-300'
+                    : active
+                      ? 'bg-gold-light font-semibold text-warning'
+                      : 'text-gray-700 hover:bg-gray-50',
                 )}
               >
                 {opt.label}
@@ -736,6 +746,7 @@ function StatusDropdown({
 function DataTaskRow({
   task,
   isLast,
+  currentUserId,
   onStatus,
   onDueDate,
   onNotes,
@@ -743,6 +754,7 @@ function DataTaskRow({
 }: {
   task: TaskRow
   isLast: boolean
+  currentUserId: string | null
   onStatus: (task: TaskRow, next: TaskStatus) => void
   onDueDate: (taskId: string, date: string) => void
   onNotes: (taskId: string, value: string, taskName: string) => void
@@ -750,11 +762,27 @@ function DataTaskRow({
 }) {
   const def = task.definition
   const [expanded, setExpanded] = useState(false)
+  const [statusError, setStatusError] = useState<string | null>(null)
   const [dateVal, setDateVal] = useState<string>(task.due_date ?? todayStr())
   const [notesVal, setNotesVal] = useState<string>(task.notes ?? '')
   const [blockedVal, setBlockedVal] = useState<string>(
     task.blocked_reason ?? '',
   )
+
+  // Complete requires an assignee: either a signed-in user (auto-assigned) or
+  // an already-assigned user. Otherwise the option is blocked.
+  const completeBlocked = !currentUserId && !task.assigned_to
+
+  const handleSelect = (next: TaskStatus) => {
+    if (next === 'complete' && completeBlocked) {
+      setStatusError(
+        'Cannot complete task — no user session found. Please sign in again.',
+      )
+      return
+    }
+    setStatusError(null)
+    onStatus(task, next)
+  }
 
   useEffect(() => {
     if (task.due_date) setDateVal(task.due_date)
@@ -797,7 +825,10 @@ function DataTaskRow({
         )}
         <StatusDropdown
           status={task.status}
-          onSelect={(next) => onStatus(task, next)}
+          disabled={
+            completeBlocked ? { complete: 'Sign in required' } : undefined
+          }
+          onSelect={handleSelect}
         />
         <span className="w-[64px] shrink-0 text-right font-mono text-[12px] text-gray-400">
           {task.due_date ? formatDate(task.due_date, false) : '—'}
@@ -806,6 +837,16 @@ function DataTaskRow({
           {expanded ? '▴' : '▾'}
         </span>
       </div>
+
+      {/* Blocked-complete guard error */}
+      {statusError && (
+        <div
+          className="px-4 pb-2 text-[12px] font-medium text-danger"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {statusError}
+        </div>
+      )}
 
       {/* Blocked reason inline input */}
       {task.status === 'blocked' && (
@@ -901,6 +942,7 @@ function DataTaskRow({
 function DataPhaseSection({
   score,
   tasks,
+  currentUserId,
   onStatus,
   onDueDate,
   onNotes,
@@ -908,6 +950,7 @@ function DataPhaseSection({
 }: {
   score: number | null
   tasks: TaskRow[]
+  currentUserId: string | null
   onStatus: (task: TaskRow, next: TaskStatus) => void
   onDueDate: (taskId: string, date: string) => void
   onNotes: (taskId: string, value: string, taskName: string) => void
@@ -932,6 +975,7 @@ function DataPhaseSection({
             key={t.id}
             task={t}
             isLast={i === tasks.length - 1}
+            currentUserId={currentUserId}
             onStatus={onStatus}
             onDueDate={onDueDate}
             onNotes={onNotes}
@@ -951,6 +995,8 @@ export function PropertyDetailPage() {
   const { id = '' } = useParams<{ id: string }>()
   const location = useLocation()
   const queryClient = useQueryClient()
+  const { user } = useAuth()
+  const currentUserId = user?.id ?? null
   const [tab, setTab] = useState<Tab>('overview')
 
   // Seeding warnings passed from the create flow (e.g. tasks/checklist RPC
@@ -1016,12 +1062,20 @@ export function PropertyDetailPage() {
     mutationFn: async ({
       task,
       newStatus,
+      uid,
     }: {
       task: TaskRow
       newStatus: TaskStatus
+      uid: string | null
     }) => {
-      const { data: userData } = await supabase.auth.getUser()
-      const uid = userData.user?.id ?? null
+      // Hard rule: a task cannot be completed without an assignee. Prefer the
+      // signed-in user; fall back to whoever is already assigned.
+      const assignee = uid ?? task.assigned_to
+      if (newStatus === 'complete' && !assignee) {
+        throw new Error(
+          'Cannot complete task — no user session found. Please sign in again.',
+        )
+      }
       const now = new Date().toISOString()
       const patch: Record<string, unknown> = {
         status: newStatus,
@@ -1035,13 +1089,16 @@ export function PropertyDetailPage() {
         patch.blocked_reason = null
       } else {
         // Auto-assign on every non-not_started status change.
-        patch.assigned_to = uid
+        patch.assigned_to = assignee
         if (task.status === 'not_started' && newStatus === 'in_progress') {
           patch.due_date = todayStr()
         }
         if (newStatus === 'complete') {
+          // Explicitly (re)assert the assignee on completion — never rely on a
+          // prior transition having set it.
+          patch.assigned_to = assignee
           patch.completed_at = now
-          patch.completed_by = uid
+          patch.completed_by = assignee
         }
         if (task.status === 'complete' && newStatus !== 'complete') {
           patch.completed_at = null
@@ -1054,9 +1111,10 @@ export function PropertyDetailPage() {
         .eq('id', task.id)
       if (error) throw error
     },
-    onMutate: async ({ task, newStatus }) => {
+    onMutate: async ({ task, newStatus, uid }) => {
       await queryClient.cancelQueries({ queryKey: tasksKey })
       const previous = queryClient.getQueryData<TaskRow[]>(tasksKey)
+      const assignee = uid ?? task.assigned_to
       const optimistic: Partial<TaskRow> = { status: newStatus }
       if (newStatus === 'not_started') {
         optimistic.assigned_to = null
@@ -1064,6 +1122,8 @@ export function PropertyDetailPage() {
         optimistic.completed_at = null
         optimistic.blocked_reason = null
       } else {
+        // Reflect the assignment immediately, without waiting for a refetch.
+        optimistic.assigned_to = assignee
         if (task.status === 'not_started' && newStatus === 'in_progress')
           optimistic.due_date = todayStr()
         if (newStatus === 'complete')
@@ -1136,13 +1196,11 @@ export function PropertyDetailPage() {
 
       const trimmed = value.trim()
       if (trimmed) {
-        const { data: userData } = await supabase.auth.getUser()
-        const uid = userData.user?.id ?? null
         const { error: journalError } = await supabase
           .from('journal_entries')
           .insert({
             property_id: id,
-            author_id: uid,
+            author_id: currentUserId,
             entry_type: 'user_note',
             body: `[Task: ${taskName}] ${trimmed}`,
             customer_visible: false,
@@ -1215,7 +1273,7 @@ export function PropertyDetailPage() {
     updateStatus.mutate({ taskId, newStatus })
 
   const onDataStatus = (task: TaskRow, newStatus: TaskStatus) =>
-    dataStatusMutation.mutate({ task, newStatus })
+    dataStatusMutation.mutate({ task, newStatus, uid: currentUserId })
   const onDataDueDate = (taskId: string, date: string) =>
     dueDateMutation.mutate({ taskId, date })
   const onDataNotes = (taskId: string, value: string, taskName: string) =>
@@ -1422,6 +1480,7 @@ export function PropertyDetailPage() {
             <DataPhaseSection
               score={dataTtv}
               tasks={dataTasks}
+              currentUserId={currentUserId}
               onStatus={onDataStatus}
               onDueDate={onDataDueDate}
               onNotes={onDataNotes}
