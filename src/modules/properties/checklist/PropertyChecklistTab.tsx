@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 import {
@@ -7,24 +7,37 @@ import {
   type RiskLevel,
 } from '@/shared/components/primitives'
 import { supabase } from '@/shared/lib/supabase'
+import { useAuth } from '@/shared/rbac/auth-context'
+import { cn } from '@/shared/lib/utils'
 
 import {
   CATEGORY_LABELS,
   CATEGORY_ORDER,
   CHECKLIST_TOTAL_POINTS,
+  DEPARTMENT_CLASS,
+  DEPARTMENT_LABEL,
   pointsEarned,
   useChecklistItems,
+  useProfiles,
   type ChecklistItem,
   type ChecklistStatus,
+  type Department,
+  type Profile,
 } from './checklist-data'
 
-// Cycle order for click-to-advance. Blocked falls back to not_started.
-const NEXT_STATUS: Record<ChecklistStatus, ChecklistStatus> = {
-  not_started: 'in_progress',
-  in_progress: 'complete',
-  complete: 'not_started',
-  blocked: 'not_started',
-}
+const STATUS_OPTIONS: { value: ChecklistStatus; label: string }[] = [
+  { value: 'not_started', label: 'Not Started' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'complete', label: 'Complete' },
+  { value: 'blocked', label: 'Blocked' },
+]
+
+const POINTS_BADGE_CLASS =
+  'shrink-0 whitespace-nowrap rounded-md bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] text-gray-400'
+const FIELD_LABEL =
+  'mb-1 text-[10px] font-medium uppercase tracking-wide text-gray-400'
+const UNDERLINE_INPUT =
+  'w-full border-0 border-b border-gray-100 bg-transparent px-0 py-1 text-[12px] text-gray-700 outline-none focus:border-gold'
 
 function fmtPoints(n: number): string {
   return `${Number(n)}`
@@ -37,25 +50,231 @@ function deriveRisk(score: number): RiskLevel {
   return 'high'
 }
 
-const POINTS_BADGE_CLASS =
-  'shrink-0 whitespace-nowrap rounded-md bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] text-gray-400'
+function formatTimestamp(iso: string | null): string {
+  if (!iso) return '—'
+  const dt = new Date(iso)
+  if (Number.isNaN(dt.getTime())) return '—'
+  return dt.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
 
 // ---------------------------------------------------------------------------
-// Item row
+// Shared controls (mirrors the Tasks tab pattern)
+// ---------------------------------------------------------------------------
+
+function DepartmentChip({ department }: { department: Department | null }) {
+  if (!department) return null
+  return (
+    <span
+      className={cn(
+        'shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-medium',
+        DEPARTMENT_CLASS[department],
+      )}
+    >
+      {DEPARTMENT_LABEL[department]}
+    </span>
+  )
+}
+
+/** Status badge that opens a small dropdown menu to pick a new status. */
+function StatusDropdown({
+  status,
+  onSelect,
+}: {
+  status: ChecklistStatus
+  onSelect: (next: ChecklistStatus) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          setOpen((v) => !v)
+        }}
+        className="cursor-pointer"
+      >
+        <StatusBadge status={status} />
+      </button>
+      {open && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="absolute right-0 top-full z-20 mt-1 w-40 overflow-hidden rounded-lg border border-gray-100 bg-white"
+          style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.12)' }}
+        >
+          {STATUS_OPTIONS.map((opt) => {
+            const active = opt.value === status
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setOpen(false)
+                  if (opt.value !== status) onSelect(opt.value)
+                }}
+                className={cn(
+                  'flex h-8 w-full items-center px-4 text-left text-[13px] transition-colors',
+                  active
+                    ? 'bg-gold-light font-semibold text-warning'
+                    : 'text-gray-700 hover:bg-gray-50',
+                )}
+              >
+                {opt.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Dropdown that lists every profile and assigns the item to the chosen one. */
+function AssignPicker({
+  profiles,
+  onAssign,
+}: {
+  profiles: Profile[]
+  onAssign: (profileId: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <div ref={ref} className="relative mt-2">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          setOpen((v) => !v)
+        }}
+        className="rounded-md border border-gray-100 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-50"
+      >
+        Assign →
+      </button>
+      {open && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="absolute left-0 top-full z-20 mt-1 max-h-56 w-60 overflow-auto rounded-lg border border-gray-100 bg-white"
+          style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.12)' }}
+        >
+          {profiles.length === 0 ? (
+            <div className="px-3 py-2 text-[12px] text-muted">
+              No profiles found
+            </div>
+          ) : (
+            profiles.map((pf) => (
+              <button
+                key={pf.id}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setOpen(false)
+                  onAssign(pf.id)
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-gray-50"
+              >
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gold text-[10px] font-bold text-navy">
+                  {pf.avatar_initials ?? pf.full_name.charAt(0).toUpperCase()}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[12px] text-gray-700">
+                  {pf.full_name}
+                </span>
+                <DepartmentChip department={pf.department} />
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Item row — compact collapsed line + expandable detail
 // ---------------------------------------------------------------------------
 
 function ChecklistRow({
   item,
-  onCycle,
+  isLast,
+  profiles,
+  getProfile,
+  onStatus,
+  onNotes,
+  onAssign,
 }: {
   item: ChecklistItem
-  onCycle: (item: ChecklistItem, next: ChecklistStatus) => void
+  isLast: boolean
+  profiles: Profile[]
+  getProfile: (userId: string | null) => Profile | undefined
+  onStatus: (item: ChecklistItem, next: ChecklistStatus) => void
+  onNotes: (itemId: string, value: string) => void
+  onAssign: (itemId: string, profileId: string) => void
 }) {
   const def = item.definition
+  const [expanded, setExpanded] = useState(false)
+  const [notesVal, setNotesVal] = useState<string>(item.notes ?? '')
+
+  useEffect(() => {
+    setNotesVal(item.notes ?? '')
+  }, [item.notes])
+
+  const assigneeProfile = getProfile(item.assigned_to)
+  const assigneeInitial = item.assigned_to
+    ? (assigneeProfile?.avatar_initials ??
+      item.assigned_to.charAt(0).toUpperCase())
+    : null
+  const assigneeName =
+    assigneeProfile?.full_name ??
+    (item.assigned_to ? `${item.assigned_to.slice(0, 18)}…` : null)
+
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-gray-100 bg-white p-4">
-      <div className="flex min-w-0 flex-1 items-center gap-2">
-        <span className="min-w-0 flex-1 text-sm text-gray-700">
+    <div style={{ borderBottom: isLast ? 'none' : '1px solid #f4f6f9' }}>
+      {/* Collapsed single-line row */}
+      <div
+        onClick={() => setExpanded((v) => !v)}
+        className="flex h-12 cursor-pointer items-center gap-3 px-4"
+      >
+        <span className="min-w-0 flex-1 truncate text-sm text-gray-700">
           {def.display_name}
         </span>
         <span className={POINTS_BADGE_CLASS}>{fmtPoints(def.points)} pts</span>
@@ -64,19 +283,82 @@ function ChecklistRow({
             Auto
           </span>
         )}
+        {assigneeInitial && (
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gold text-[9px] font-bold text-navy">
+            {assigneeInitial}
+          </span>
+        )}
+        <StatusDropdown
+          status={item.status}
+          onSelect={(next) => onStatus(item, next)}
+        />
+        <span className="w-4 shrink-0 text-center text-sm text-muted">
+          {expanded ? '▴' : '▾'}
+        </span>
       </div>
 
-      <button
-        type="button"
-        onClick={() => onCycle(item, NEXT_STATUS[item.status])}
-        className="shrink-0 cursor-pointer"
-      >
-        <StatusBadge status={item.status} />
-      </button>
+      {/* Expanded 3-column detail */}
+      {expanded && (
+        <div
+          className="grid grid-cols-1 gap-4 bg-gray-50 px-4 py-3 sm:grid-cols-3"
+          style={{ borderTop: '1px solid #f4f6f9' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Assignee */}
+          <div>
+            <div className={FIELD_LABEL}>Assigned To</div>
+            {item.assigned_to ? (
+              <div className="flex items-center gap-2">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gold text-[10px] font-bold text-navy">
+                  {assigneeInitial}
+                </span>
+                <span className="min-w-0 truncate text-[12px] text-gray-700">
+                  {assigneeName}
+                </span>
+                <DepartmentChip
+                  department={assigneeProfile?.department ?? null}
+                />
+              </div>
+            ) : (
+              <div className="text-[12px] text-muted">Unassigned</div>
+            )}
+            <AssignPicker
+              profiles={profiles}
+              onAssign={(profileId) => onAssign(item.id, profileId)}
+            />
+          </div>
 
-      <span className="w-[88px] shrink-0 truncate text-right text-xs text-muted">
-        {item.assigned_to ? `${item.assigned_to.slice(0, 8)}…` : 'Unassigned'}
-      </span>
+          {/* Completed */}
+          <div>
+            <div className={FIELD_LABEL}>Completed</div>
+            <div
+              className={cn(
+                'text-[12px]',
+                item.status === 'complete' ? 'text-gray-700' : 'text-gray-400',
+              )}
+            >
+              {item.status === 'complete'
+                ? formatTimestamp(item.completed_at)
+                : '—'}
+            </div>
+          </div>
+
+          {/* Notes (operational only — not posted to journal) */}
+          <div>
+            <div className={FIELD_LABEL}>Notes</div>
+            <textarea
+              rows={2}
+              value={notesVal}
+              placeholder="Add a note..."
+              onChange={(e) => setNotesVal(e.target.value)}
+              onBlur={() => {
+                if ((item.notes ?? '') !== notesVal) onNotes(item.id, notesVal)
+              }}
+              className={cn(UNDERLINE_INPUT, 'resize-none bg-gray-50')}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -88,11 +370,19 @@ function ChecklistRow({
 function CategorySection({
   title,
   items,
-  onCycle,
+  profiles,
+  getProfile,
+  onStatus,
+  onNotes,
+  onAssign,
 }: {
   title: string
   items: ChecklistItem[]
-  onCycle: (item: ChecklistItem, next: ChecklistStatus) => void
+  profiles: Profile[]
+  getProfile: (userId: string | null) => Profile | undefined
+  onStatus: (item: ChecklistItem, next: ChecklistStatus) => void
+  onNotes: (itemId: string, value: string) => void
+  onAssign: (itemId: string, profileId: string) => void
 }) {
   const [open, setOpen] = useState(true)
 
@@ -104,7 +394,7 @@ function CategorySection({
   const completeCount = items.filter((i) => i.status === 'complete').length
 
   return (
-    <div className="overflow-hidden rounded-xl border border-gray-100 bg-white">
+    <div className="rounded-xl border border-gray-100 bg-white">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -123,9 +413,18 @@ function CategorySection({
       </button>
 
       {open && (
-        <div className="flex flex-col gap-2 border-t border-gray-50 bg-gray-50/40 p-3">
-          {items.map((item) => (
-            <ChecklistRow key={item.id} item={item} onCycle={onCycle} />
+        <div className="border-t border-gray-50">
+          {items.map((item, i) => (
+            <ChecklistRow
+              key={item.id}
+              item={item}
+              isLast={i === items.length - 1}
+              profiles={profiles}
+              getProfile={getProfile}
+              onStatus={onStatus}
+              onNotes={onNotes}
+              onAssign={onAssign}
+            />
           ))}
         </div>
       )}
@@ -145,25 +444,73 @@ export function PropertyChecklistTab({
   propertyProductId: string
 }) {
   const queryClient = useQueryClient()
-  const query = useChecklistItems(propertyId, propertyProductId)
+  const { user } = useAuth()
+  const currentUserId = user?.id ?? null
 
-  const updateStatus = useMutation({
+  const query = useChecklistItems(propertyId, propertyProductId)
+  const profilesQuery = useProfiles()
+
+  const profiles = profilesQuery.data ?? []
+  const getProfile = (userId: string | null) =>
+    userId ? profiles.find((p) => p.id === userId) : undefined
+
+  const checklistKey = ['checklist', propertyId, propertyProductId]
+
+  const statusMutation = useMutation({
     mutationFn: async ({
-      itemId,
+      item,
       newStatus,
     }: {
-      itemId: string
+      item: ChecklistItem
       newStatus: ChecklistStatus
     }) => {
+      const now = new Date().toISOString()
       const patch: Record<string, unknown> = {
         status: newStatus,
-        updated_at: new Date().toISOString(),
+        updated_at: now,
+        // Auto-assign to the signed-in user on any active status; clear on reset.
+        assigned_to: newStatus === 'not_started' ? null : currentUserId,
+        completed_at: newStatus === 'complete' ? now : null,
       }
-      if (newStatus === 'complete')
-        patch.completed_at = new Date().toISOString()
       const { error } = await supabase
         .from('property_checklist_items')
         .update(patch)
+        .eq('id', item.id)
+      if (error) throw error
+    },
+    onMutate: async ({ item, newStatus }) => {
+      await queryClient.cancelQueries({ queryKey: checklistKey })
+      const previous = queryClient.getQueryData<ChecklistItem[]>(checklistKey)
+      // Optimistically patch so the score bar recomputes without a refetch.
+      const optimistic: Partial<ChecklistItem> = {
+        status: newStatus,
+        assigned_to: newStatus === 'not_started' ? null : currentUserId,
+        completed_at:
+          newStatus === 'complete' ? new Date().toISOString() : null,
+      }
+      queryClient.setQueryData<ChecklistItem[]>(checklistKey, (old) =>
+        old?.map((it) => (it.id === item.id ? { ...it, ...optimistic } : it)),
+      )
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.previous) queryClient.setQueryData(checklistKey, ctx.previous)
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: ['checklist', propertyId] }),
+  })
+
+  const notesMutation = useMutation({
+    mutationFn: async ({
+      itemId,
+      value,
+    }: {
+      itemId: string
+      value: string
+    }) => {
+      const { error } = await supabase
+        .from('property_checklist_items')
+        .update({ notes: value, updated_at: new Date().toISOString() })
         .eq('id', itemId)
       if (error) throw error
     },
@@ -171,8 +518,33 @@ export function PropertyChecklistTab({
       queryClient.invalidateQueries({ queryKey: ['checklist', propertyId] }),
   })
 
-  const onCycle = (item: ChecklistItem, newStatus: ChecklistStatus) =>
-    updateStatus.mutate({ itemId: item.id, newStatus })
+  const assignMutation = useMutation({
+    mutationFn: async ({
+      itemId,
+      profileId,
+    }: {
+      itemId: string
+      profileId: string
+    }) => {
+      const { error } = await supabase
+        .from('property_checklist_items')
+        .update({
+          assigned_to: profileId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', itemId)
+      if (error) throw error
+    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['checklist', propertyId] }),
+  })
+
+  const onStatus = (item: ChecklistItem, newStatus: ChecklistStatus) =>
+    statusMutation.mutate({ item, newStatus })
+  const onNotes = (itemId: string, value: string) =>
+    notesMutation.mutate({ itemId, value })
+  const onAssign = (itemId: string, profileId: string) =>
+    assignMutation.mutate({ itemId, profileId })
 
   if (query.isLoading) {
     return (
@@ -236,7 +608,11 @@ export function PropertyChecklistTab({
             key={category}
             title={CATEGORY_LABELS[category]}
             items={inCategory}
-            onCycle={onCycle}
+            profiles={profiles}
+            getProfile={getProfile}
+            onStatus={onStatus}
+            onNotes={onNotes}
+            onAssign={onAssign}
           />
         )
       })}

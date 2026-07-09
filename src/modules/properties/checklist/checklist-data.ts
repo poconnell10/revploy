@@ -90,3 +90,44 @@ export function pointsEarned(items: ChecklistItem[]): number {
     .filter((i) => i.status === 'complete')
     .reduce((sum, i) => sum + Number(i.definition.points), 0)
 }
+
+// ---------------------------------------------------------------------------
+// Profiles (shared shape with the Tasks tab) so assignees show real names.
+// ---------------------------------------------------------------------------
+
+export type Department = 'tech' | 'operations' | 'sales' | 'customer_success'
+
+export interface Profile {
+  id: string
+  full_name: string
+  email: string
+  department: Department | null
+  avatar_initials: string | null
+}
+
+export const DEPARTMENT_LABEL: Record<Department, string> = {
+  tech: 'Tech',
+  operations: 'Operations',
+  sales: 'Sales',
+  customer_success: 'Customer Success',
+}
+
+export const DEPARTMENT_CLASS: Record<Department, string> = {
+  tech: 'bg-info-subtle text-info',
+  operations: 'bg-purple-subtle text-purple',
+  sales: 'bg-warning-subtle text-warning',
+  customer_success: 'bg-success-subtle text-success',
+}
+
+export function useProfiles() {
+  return useQuery({
+    queryKey: ['profiles'],
+    queryFn: async (): Promise<Profile[]> => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, email, department, avatar_initials')
+      if (error) throw error
+      return (data ?? []) as Profile[]
+    },
+  })
+}
