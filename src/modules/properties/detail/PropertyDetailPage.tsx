@@ -1164,6 +1164,10 @@ export function PropertyDetailPage() {
   const { user } = useAuth()
   const currentUserId = user?.id ?? null
   const [tab, setTab] = useState<Tab>('overview')
+  // Dev/testing only: hides phase-gate locks in the UI. The DB triggers still
+  // enforce gating, so a disallowed transition is simply rejected on save.
+  // Component-state only — resets on reload.
+  const [testingMode, setTestingMode] = useState(false)
 
   // Seeding warnings passed from the create flow (e.g. tasks/checklist RPC
   // failed after the property was created). Dismissible; shown once.
@@ -1670,6 +1674,27 @@ export function PropertyDetailPage() {
 
         {tab === 'tasks' && (
           <div className="flex flex-col gap-5">
+            {/* Dev/testing toggle — UI-only phase-gate bypass */}
+            <div className="flex flex-col items-end gap-1">
+              <button
+                type="button"
+                onClick={() => setTestingMode((v) => !v)}
+                title="Testing tool — hides gate locks in the UI only"
+                className={cn(
+                  'rounded-full px-2.5 py-1 text-[12px] font-medium transition-colors',
+                  testingMode
+                    ? 'bg-[#fef3c7] text-[#d97706]'
+                    : 'bg-gray-50 text-gray-400 hover:bg-gray-100',
+                )}
+              >
+                {testingMode ? 'Testing Mode ON' : 'Testing Mode'}
+              </button>
+              {testingMode && (
+                <span className="text-[11px] font-medium text-[#d97706]">
+                  ⚠ Gate locks hidden for testing
+                </span>
+              )}
+            </div>
             <DataPhaseSection
               score={dataTtv}
               tasks={dataTasks}
@@ -1687,7 +1712,7 @@ export function PropertyDetailPage() {
               title="Configuration Phase"
               score={configTtv}
               tasks={configTasks}
-              gated={configGated}
+              gated={testingMode ? false : configGated}
               onCycle={onCycle}
             />
             <PhaseSection
@@ -1695,7 +1720,7 @@ export function PropertyDetailPage() {
               title="Provisioning Phase"
               score={provTtv}
               tasks={provTasks}
-              gated={provGated}
+              gated={testingMode ? false : provGated}
               onCycle={onCycle}
             />
           </div>
