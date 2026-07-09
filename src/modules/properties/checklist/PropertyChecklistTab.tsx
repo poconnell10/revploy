@@ -240,6 +240,7 @@ function ChecklistRow({
   getProfile,
   onStatus,
   onNotes,
+  onPostNote,
   onAssign,
 }: {
   item: ChecklistItem
@@ -248,15 +249,34 @@ function ChecklistRow({
   getProfile: (userId: string | null) => Profile | undefined
   onStatus: (item: ChecklistItem, next: ChecklistStatus) => void
   onNotes: (itemId: string, value: string) => void
+  onPostNote: (itemId: string, value: string, itemName: string) => void
   onAssign: (itemId: string, profileId: string) => void
 }) {
   const def = item.definition
   const [expanded, setExpanded] = useState(false)
   const [notesVal, setNotesVal] = useState<string>(item.notes ?? '')
+  const [notePosted, setNotePosted] = useState(false)
+  // Last-persisted note so blur doesn't re-save a value already saved/posted.
+  const savedNoteRef = useRef<string>(item.notes ?? '')
 
   useEffect(() => {
     setNotesVal(item.notes ?? '')
+    savedNoteRef.current = item.notes ?? ''
   }, [item.notes])
+
+  const saveNote = () => {
+    if (notesVal !== savedNoteRef.current) {
+      savedNoteRef.current = notesVal
+      onNotes(item.id, notesVal)
+    }
+  }
+
+  const postNote = () => {
+    savedNoteRef.current = notesVal
+    onPostNote(item.id, notesVal, def.display_name)
+    setNotePosted(true)
+    window.setTimeout(() => setNotePosted(false), 2000)
+  }
 
   const assigneeProfile = getProfile(item.assigned_to)
   const assigneeInitial = item.assigned_to
@@ -343,7 +363,7 @@ function ChecklistRow({
             </div>
           </div>
 
-          {/* Notes (operational only — not posted to journal) */}
+          {/* Notes — blur saves silently; Post also broadcasts to the journal */}
           <div>
             <div className={FIELD_LABEL}>Notes</div>
             <textarea
@@ -351,11 +371,25 @@ function ChecklistRow({
               value={notesVal}
               placeholder="Add a note..."
               onChange={(e) => setNotesVal(e.target.value)}
-              onBlur={() => {
-                if ((item.notes ?? '') !== notesVal) onNotes(item.id, notesVal)
-              }}
+              onBlur={saveNote}
               className={cn(UNDERLINE_INPUT, 'resize-none bg-gray-50')}
             />
+            <div className="mt-1 flex h-5 items-center gap-2">
+              {notesVal.trim() && (
+                <button
+                  type="button"
+                  onClick={postNote}
+                  className="rounded bg-gold px-2 py-0.5 text-[11px] font-semibold text-navy transition-[filter] hover:brightness-95"
+                >
+                  Post
+                </button>
+              )}
+              {notePosted && (
+                <span className="text-[11px] font-medium text-success">
+                  Posted ✓
+                </span>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -374,6 +408,7 @@ function CategorySection({
   getProfile,
   onStatus,
   onNotes,
+  onPostNote,
   onAssign,
 }: {
   title: string
@@ -382,6 +417,7 @@ function CategorySection({
   getProfile: (userId: string | null) => Profile | undefined
   onStatus: (item: ChecklistItem, next: ChecklistStatus) => void
   onNotes: (itemId: string, value: string) => void
+  onPostNote: (itemId: string, value: string, itemName: string) => void
   onAssign: (itemId: string, profileId: string) => void
 }) {
   const [open, setOpen] = useState(true)
@@ -423,6 +459,7 @@ function CategorySection({
               getProfile={getProfile}
               onStatus={onStatus}
               onNotes={onNotes}
+              onPostNote={onPostNote}
               onAssign={onAssign}
             />
           ))}
@@ -500,6 +537,7 @@ export function PropertyChecklistTab({
       queryClient.invalidateQueries({ queryKey: ['checklist', propertyId] }),
   })
 
+  // Silent operational save (on blur) — notes only, no journal entry.
   const notesMutation = useMutation({
     mutationFn: async ({
       itemId,
@@ -516,6 +554,45 @@ export function PropertyChecklistTab({
     },
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ['checklist', propertyId] }),
+  })
+
+  // Explicit "Post" — saves the note AND broadcasts it to the property journal.
+  const postNoteMutation = useMutation({
+    mutationFn: async ({
+      itemId,
+      value,
+      itemName,
+    }: {
+      itemId: string
+      value: string
+      itemName: string
+    }) => {
+      const now = new Date().toISOString()
+      const { error } = await supabase
+        .from('property_checklist_items')
+        .update({ notes: value, updated_at: now })
+        .eq('id', itemId)
+      if (error) throw error
+
+      const trimmed = value.trim()
+      if (trimmed) {
+        const { error: journalError } = await supabase
+          .from('journal_entries')
+          .insert({
+            property_id: propertyId,
+            author_id: currentUserId,
+            entry_type: 'user_note',
+            body: `[Checklist: ${itemName}] ${trimmed}`,
+            customer_visible: false,
+            parent_id: null,
+          })
+        if (journalError) throw journalError
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['checklist', propertyId] })
+      queryClient.invalidateQueries({ queryKey: ['journal', propertyId] })
+    },
   })
 
   const assignMutation = useMutation({
@@ -543,6 +620,8 @@ export function PropertyChecklistTab({
     statusMutation.mutate({ item, newStatus })
   const onNotes = (itemId: string, value: string) =>
     notesMutation.mutate({ itemId, value })
+  const onPostNote = (itemId: string, value: string, itemName: string) =>
+    postNoteMutation.mutate({ itemId, value, itemName })
   const onAssign = (itemId: string, profileId: string) =>
     assignMutation.mutate({ itemId, profileId })
 
@@ -612,6 +691,7 @@ export function PropertyChecklistTab({
             getProfile={getProfile}
             onStatus={onStatus}
             onNotes={onNotes}
+            onPostNote={onPostNote}
             onAssign={onAssign}
           />
         )
