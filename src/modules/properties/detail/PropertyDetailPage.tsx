@@ -111,13 +111,6 @@ const PHASE_HEX: Record<Phase, string> = {
   provisioning: '#2563eb',
 }
 
-const NEXT_STATUS: Record<TaskStatus, TaskStatus> = {
-  not_started: 'in_progress',
-  in_progress: 'complete',
-  complete: 'not_started',
-  blocked: 'not_started',
-}
-
 const PHASE_TASK_TOTAL: Record<Phase, number> = {
   data: 6,
   configuration: 8,
@@ -526,146 +519,8 @@ function TeamCard({
 }
 
 // ---------------------------------------------------------------------------
-// Tasks tab
-// ---------------------------------------------------------------------------
-
-function TaskRowItem({
-  task,
-  gated,
-  onCycle,
-}: {
-  task: TaskRow
-  gated: boolean
-  onCycle: (taskId: string, next: TaskStatus) => void
-}) {
-  const [expanded, setExpanded] = useState(false)
-  const def = task.definition
-
-  return (
-    <div
-      className="rounded-xl border border-gray-100 bg-white"
-      style={{ opacity: gated ? 0.45 : 1 }}
-    >
-      <div
-        onClick={() => !gated && setExpanded((v) => !v)}
-        className="flex items-center gap-3 p-4"
-        style={{ cursor: gated ? 'not-allowed' : 'pointer' }}
-      >
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <span className="min-w-0 flex-1 text-sm font-medium text-navy">
-            {def.display_name}
-          </span>
-          {def.is_phase_gate && (
-            <span className="shrink-0 whitespace-nowrap rounded border border-[#fde8a5] bg-gold-light px-1.5 py-0.5 text-[10px] font-semibold text-warning">
-              Phase Gate
-            </span>
-          )}
-          {def.completion_mode === 'auto_with_override' && (
-            <span className="shrink-0 whitespace-nowrap rounded bg-info-subtle px-1.5 py-0.5 text-[10px] font-medium text-info">
-              Auto
-            </span>
-          )}
-          <span className="shrink-0 whitespace-nowrap rounded bg-gray-50 px-1.5 py-0.5 text-[10px] capitalize text-muted">
-            {def.required_role}
-          </span>
-        </div>
-
-        <button
-          type="button"
-          disabled={gated}
-          onClick={(e) => {
-            e.stopPropagation()
-            if (!gated) onCycle(task.id, NEXT_STATUS[task.status])
-          }}
-          className={cn(
-            'shrink-0',
-            gated ? 'cursor-not-allowed' : 'cursor-pointer',
-          )}
-        >
-          <StatusBadge status={task.status} />
-        </button>
-
-        <span className="w-[88px] shrink-0 truncate text-right text-xs text-muted">
-          {task.assigned_to ? `${task.assigned_to.slice(0, 8)}…` : 'Unassigned'}
-        </span>
-        <span className="w-[60px] shrink-0 text-right font-mono text-[11px] text-muted">
-          {task.due_date ? formatDate(task.due_date, false) : '—'}
-        </span>
-        <span className="w-4 shrink-0 text-center text-sm text-muted">
-          {expanded ? '▴' : '▾'}
-        </span>
-      </div>
-
-      {expanded && !gated && (
-        <div className="border-t border-gray-50 bg-gray-50/60 px-4 py-3">
-          {task.blocked_reason && (
-            <div className="mb-2 flex items-start gap-2 rounded-lg border border-[#fde68a] bg-warning-subtle px-3 py-2">
-              <span className="text-warning">⚠</span>
-              <span className="text-xs text-warning-strong">
-                {task.blocked_reason}
-              </span>
-            </div>
-          )}
-          {task.completed_at ? (
-            <div className="text-[11.5px] text-muted">
-              Completed {formatDate(task.completed_at)}
-            </div>
-          ) : (
-            <div className="text-[11.5px] text-muted">
-              No additional details for this task yet.
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function PhaseSection({
-  phase,
-  title,
-  score,
-  tasks,
-  gated,
-  onCycle,
-}: {
-  phase: Phase
-  title: string
-  score: number | null
-  tasks: TaskRow[]
-  gated: boolean
-  onCycle: (taskId: string, next: TaskStatus) => void
-}) {
-  return (
-    <div className="flex flex-col gap-2.5">
-      <div className="flex items-center gap-2.5">
-        <span
-          className="h-2 w-2 shrink-0 rounded-full"
-          style={{ background: PHASE_HEX[phase] }}
-        />
-        <span className="text-sm font-semibold text-navy">{title}</span>
-        <TTVBadge score={score} size="sm" />
-        <span className="text-xs text-muted">
-          {PHASE_TASK_TOTAL[phase]} tasks
-        </span>
-        {gated && (
-          <span className="flex items-center gap-1 rounded-[20px] bg-danger-subtle px-2 py-0.5 text-[11px] font-semibold text-danger">
-            🔒 Locked
-          </span>
-        )}
-      </div>
-      {gated && phase !== 'data' && (
-        <PhaseGateBanner phase={phase as 'configuration' | 'provisioning'} />
-      )}
-      {tasks.map((t) => (
-        <TaskRowItem key={t.id} task={t} gated={gated} onCycle={onCycle} />
-      ))}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Data phase — enhanced interactive rows (assignee, editable dates, notes)
+// Tasks tab — enhanced interactive rows (status dropdown, assignee, dates,
+// notes) shared by all three phases
 // ---------------------------------------------------------------------------
 
 const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
@@ -854,9 +709,11 @@ function AssignPicker({
   )
 }
 
-function DataTaskRow({
+function EnhancedTaskRow({
   task,
   isLast,
+  gated,
+  isAdmin,
   currentUserId,
   profiles,
   getProfile,
@@ -868,6 +725,8 @@ function DataTaskRow({
 }: {
   task: TaskRow
   isLast: boolean
+  gated: boolean
+  isAdmin: boolean
   currentUserId: string | null
   profiles: Profile[]
   getProfile: (userId: string | null) => Profile | undefined
@@ -889,9 +748,19 @@ function DataTaskRow({
   // Tracks the last-persisted note so blur + Post don't double-save/double-post.
   const savedNoteRef = useRef<string>(task.notes ?? '')
 
+  const isAuto = def.completion_mode === 'auto_with_override'
+  // The activation-readiness gate may only be completed by an admin.
+  const isActivationGate = def.task_key === 'prov_activation_readiness'
+  const adminOnlyComplete = isActivationGate && !isAdmin
+
   // Complete requires an assignee: either a signed-in user (auto-assigned) or
   // an already-assigned user. Otherwise the option is blocked.
   const completeBlocked = !currentUserId && !task.assigned_to
+  const completeDisabledReason = completeBlocked
+    ? 'Sign in required'
+    : adminOnlyComplete
+      ? 'Admin only'
+      : undefined
 
   const saveNote = (confirm: boolean) => {
     if (notesVal !== savedNoteRef.current) {
@@ -909,6 +778,10 @@ function DataTaskRow({
       setStatusError(
         'Cannot complete task — no user session found. Please sign in again.',
       )
+      return
+    }
+    if (next === 'complete' && adminOnlyComplete) {
+      setStatusError('Only an admin can complete this task.')
       return
     }
     setStatusError(null)
@@ -938,11 +811,17 @@ function DataTaskRow({
     (task.assigned_to ? `${task.assigned_to.slice(0, 18)}…` : null)
 
   return (
-    <div style={{ borderBottom: isLast ? 'none' : '1px solid #f4f6f9' }}>
+    <div
+      style={{
+        borderBottom: isLast ? 'none' : '1px solid #f4f6f9',
+        opacity: gated ? 0.45 : 1,
+      }}
+    >
       {/* Collapsed single-line row */}
       <div
-        onClick={() => setExpanded((v) => !v)}
-        className="flex h-12 cursor-pointer items-center gap-3 px-4"
+        onClick={() => !gated && setExpanded((v) => !v)}
+        className="flex h-12 items-center gap-3 px-4"
+        style={{ cursor: gated ? 'not-allowed' : 'pointer' }}
       >
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-navy">
           {def.display_name}
@@ -950,6 +829,11 @@ function DataTaskRow({
         {def.is_phase_gate && (
           <span className="shrink-0 whitespace-nowrap rounded border border-[#fde8a5] bg-gold-light px-1.5 py-0.5 text-[10px] font-semibold text-warning">
             Phase Gate
+          </span>
+        )}
+        {isAuto && (
+          <span className="shrink-0 whitespace-nowrap rounded bg-info-subtle px-1.5 py-0.5 text-[10px] font-medium text-info">
+            Auto
           </span>
         )}
         <span className="shrink-0 whitespace-nowrap rounded bg-gray-50 px-1.5 py-0.5 text-[11px] capitalize text-muted">
@@ -960,23 +844,29 @@ function DataTaskRow({
             {assigneeInitial}
           </span>
         )}
-        <StatusDropdown
-          status={task.status}
-          disabled={
-            completeBlocked ? { complete: 'Sign in required' } : undefined
-          }
-          onSelect={handleSelect}
-        />
+        {gated ? (
+          <StatusBadge status={task.status} />
+        ) : (
+          <StatusDropdown
+            status={task.status}
+            disabled={
+              completeDisabledReason
+                ? { complete: completeDisabledReason }
+                : undefined
+            }
+            onSelect={handleSelect}
+          />
+        )}
         <span className="w-[64px] shrink-0 text-right font-mono text-[12px] text-gray-400">
           {task.due_date ? formatDate(task.due_date, false) : '—'}
         </span>
         <span className="w-4 shrink-0 text-center text-sm text-muted">
-          {expanded ? '▴' : '▾'}
+          {gated ? '🔒' : expanded ? '▴' : '▾'}
         </span>
       </div>
 
       {/* Blocked-complete guard error */}
-      {statusError && (
+      {!gated && statusError && (
         <div
           className="px-4 pb-2 text-[12px] font-medium text-danger"
           onClick={(e) => e.stopPropagation()}
@@ -986,7 +876,7 @@ function DataTaskRow({
       )}
 
       {/* Blocked reason inline input */}
-      {task.status === 'blocked' && (
+      {!gated && task.status === 'blocked' && (
         <div
           className="px-4 pb-3"
           style={{ borderTop: '1px solid #f4f6f9' }}
@@ -1007,7 +897,7 @@ function DataTaskRow({
       )}
 
       {/* Expanded 3-column detail */}
-      {expanded && (
+      {!gated && expanded && (
         <div
           className="grid grid-cols-1 gap-4 bg-gray-50 px-4 py-3 sm:grid-cols-3"
           style={{ borderTop: '1px solid #f4f6f9' }}
@@ -1096,9 +986,13 @@ function DataTaskRow({
   )
 }
 
-function DataPhaseSection({
+function EnhancedPhaseSection({
+  phase,
+  title,
   score,
   tasks,
+  gated,
+  isAdmin,
   currentUserId,
   profiles,
   getProfile,
@@ -1108,8 +1002,12 @@ function DataPhaseSection({
   onBlockedReason,
   onAssign,
 }: {
+  phase: Phase
+  title: string
   score: number | null
   tasks: TaskRow[]
+  gated: boolean
+  isAdmin: boolean
   currentUserId: string | null
   profiles: Profile[]
   getProfile: (userId: string | null) => Profile | undefined
@@ -1124,20 +1022,30 @@ function DataPhaseSection({
       <div className="flex items-center gap-2.5">
         <span
           className="h-2 w-2 shrink-0 rounded-full"
-          style={{ background: PHASE_HEX.data }}
+          style={{ background: PHASE_HEX[phase] }}
         />
-        <span className="text-sm font-semibold text-navy">Data Phase</span>
+        <span className="text-sm font-semibold text-navy">{title}</span>
         <TTVBadge score={score} size="sm" />
         <span className="text-xs text-muted">
-          {PHASE_TASK_TOTAL.data} tasks
+          {PHASE_TASK_TOTAL[phase]} tasks
         </span>
+        {gated && (
+          <span className="flex items-center gap-1 rounded-[20px] bg-danger-subtle px-2 py-0.5 text-[11px] font-semibold text-danger">
+            🔒 Locked
+          </span>
+        )}
       </div>
+      {gated && phase !== 'data' && (
+        <PhaseGateBanner phase={phase as 'configuration' | 'provisioning'} />
+      )}
       <div className="rounded-xl border border-gray-100 bg-white">
         {tasks.map((t, i) => (
-          <DataTaskRow
+          <EnhancedTaskRow
             key={t.id}
             task={t}
             isLast={i === tasks.length - 1}
+            gated={gated}
+            isAdmin={isAdmin}
             currentUserId={currentUserId}
             profiles={profiles}
             getProfile={getProfile}
@@ -1161,8 +1069,9 @@ export function PropertyDetailPage() {
   const { id = '' } = useParams<{ id: string }>()
   const location = useLocation()
   const queryClient = useQueryClient()
-  const { user } = useAuth()
+  const { user, role } = useAuth()
   const currentUserId = user?.id ?? null
+  const isAdmin = role === 'admin'
   const [tab, setTab] = useState<Tab>('overview')
   // Dev/testing only: hides phase-gate locks in the UI. The DB triggers still
   // enforce gating, so a disallowed transition is simply rejected on save.
@@ -1206,32 +1115,9 @@ export function PropertyDetailPage() {
   const tasksQuery = useTasks(id, activeProductId)
   const checklistQuery = useChecklistItems(id, activeProductId)
 
-  const updateStatus = useMutation({
-    mutationFn: async ({
-      taskId,
-      newStatus,
-    }: {
-      taskId: string
-      newStatus: TaskStatus
-    }) => {
-      const patch: Record<string, unknown> = {
-        status: newStatus,
-        updated_at: new Date().toISOString(),
-      }
-      if (newStatus === 'complete')
-        patch.completed_at = new Date().toISOString()
-      const { error } = await supabase
-        .from('property_lifecycle_tasks')
-        .update(patch)
-        .eq('id', taskId)
-      if (error) throw error
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks', id] }),
-  })
-
-  // Data-phase status change: applies the full transition rules (assignee /
-  // due date / completed metadata) and optimistically patches the cache so the
-  // Data TTV badge recomputes immediately.
+  // Task status change: applies the full transition rules (assignee / due date
+  // / completed metadata) and optimistically patches the cache so the phase TTV
+  // badges recompute immediately. Shared across all three phases.
   const tasksKey = ['tasks', id, activeProductId]
   const dataStatusMutation = useMutation({
     mutationFn: async ({
@@ -1464,18 +1350,15 @@ export function PropertyDetailPage() {
     configTasks.length > 0 && configTasks.every((t) => t.status === 'complete')
   const provGated = !allConfigComplete
 
-  const onCycle = (taskId: string, newStatus: TaskStatus) =>
-    updateStatus.mutate({ taskId, newStatus })
-
-  const onDataStatus = (task: TaskRow, newStatus: TaskStatus) =>
+  const onTaskStatus = (task: TaskRow, newStatus: TaskStatus) =>
     dataStatusMutation.mutate({ task, newStatus, uid: currentUserId })
-  const onDataDueDate = (taskId: string, date: string) =>
+  const onTaskDueDate = (taskId: string, date: string) =>
     dueDateMutation.mutate({ taskId, date })
-  const onDataNotes = (taskId: string, value: string, taskName: string) =>
+  const onTaskNotes = (taskId: string, value: string, taskName: string) =>
     notesMutation.mutate({ taskId, value, taskName })
-  const onDataBlockedReason = (taskId: string, value: string) =>
+  const onTaskBlockedReason = (taskId: string, value: string) =>
     blockedReasonMutation.mutate({ taskId, value })
-  const onDataAssign = (taskId: string, profileId: string) =>
+  const onTaskAssign = (taskId: string, profileId: string) =>
     assignMutation.mutate({ taskId, profileId })
 
   const days = daysSince(property.start_date)
@@ -1695,33 +1578,53 @@ export function PropertyDetailPage() {
                 </span>
               )}
             </div>
-            <DataPhaseSection
+            <EnhancedPhaseSection
+              phase="data"
+              title="Data Phase"
               score={dataTtv}
               tasks={dataTasks}
+              gated={false}
+              isAdmin={isAdmin}
               currentUserId={currentUserId}
               profiles={profiles}
               getProfile={getProfile}
-              onStatus={onDataStatus}
-              onDueDate={onDataDueDate}
-              onNotes={onDataNotes}
-              onBlockedReason={onDataBlockedReason}
-              onAssign={onDataAssign}
+              onStatus={onTaskStatus}
+              onDueDate={onTaskDueDate}
+              onNotes={onTaskNotes}
+              onBlockedReason={onTaskBlockedReason}
+              onAssign={onTaskAssign}
             />
-            <PhaseSection
+            <EnhancedPhaseSection
               phase="configuration"
               title="Configuration Phase"
               score={configTtv}
               tasks={configTasks}
               gated={testingMode ? false : configGated}
-              onCycle={onCycle}
+              isAdmin={isAdmin}
+              currentUserId={currentUserId}
+              profiles={profiles}
+              getProfile={getProfile}
+              onStatus={onTaskStatus}
+              onDueDate={onTaskDueDate}
+              onNotes={onTaskNotes}
+              onBlockedReason={onTaskBlockedReason}
+              onAssign={onTaskAssign}
             />
-            <PhaseSection
+            <EnhancedPhaseSection
               phase="provisioning"
               title="Provisioning Phase"
               score={provTtv}
               tasks={provTasks}
               gated={testingMode ? false : provGated}
-              onCycle={onCycle}
+              isAdmin={isAdmin}
+              currentUserId={currentUserId}
+              profiles={profiles}
+              getProfile={getProfile}
+              onStatus={onTaskStatus}
+              onDueDate={onTaskDueDate}
+              onNotes={onTaskNotes}
+              onBlockedReason={onTaskBlockedReason}
+              onAssign={onTaskAssign}
             />
           </div>
         )}
