@@ -20,6 +20,7 @@ import { useAuth } from '@/shared/rbac/auth-context'
 import { usePropertyProducts } from '@/shared/products/products'
 import { cn } from '@/shared/lib/utils'
 
+import { PropertyActions } from './PropertyActions'
 import { PropertyChecklistTab } from '../checklist/PropertyChecklistTab'
 import { pointsEarned, useChecklistItems } from '../checklist/checklist-data'
 import { PropertyJournalTab } from '../journal/PropertyJournalTab'
@@ -1350,6 +1351,27 @@ export function PropertyDetailPage() {
     configTasks.length > 0 && configTasks.every((t) => t.status === 'complete')
   const provGated = !allConfigComplete
 
+  // Whether the current phase's gate requirements are met (for the Advance
+  // Lifecycle action; the actual gate is still enforced by DB triggers).
+  const provReadinessComplete =
+    tasks.find((t) => t.definition.task_key === 'prov_activation_readiness')
+      ?.status === 'complete'
+  const gatesMet =
+    property.lifecycle_state !== 'onboarding'
+      ? true
+      : property.phase_current === 'data'
+        ? divComplete
+        : property.phase_current === 'configuration'
+          ? allConfigComplete
+          : property.phase_current === 'provisioning'
+            ? Boolean(
+                provReadinessComplete &&
+                property.salesforce_id &&
+                property.ingauge_id,
+              )
+            : true
+  const canManage = role === 'admin' || role === 'manager'
+
   const onTaskStatus = (task: TaskRow, newStatus: TaskStatus) =>
     dataStatusMutation.mutate({ task, newStatus, uid: currentUserId })
   const onTaskDueDate = (taskId: string, date: string) =>
@@ -1391,12 +1413,15 @@ export function PropertyDetailPage() {
               {property.code}
             </span>
           </div>
-          <button
-            type="button"
-            className="shrink-0 rounded-md border border-gray-100 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100"
-          >
-            Actions ▾
-          </button>
+          {canManage && (
+            <PropertyActions
+              property={property}
+              contacts={contactsQuery.data ?? []}
+              profiles={profiles}
+              gatesMet={gatesMet}
+              isAdmin={isAdmin}
+            />
+          )}
         </div>
 
         <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
