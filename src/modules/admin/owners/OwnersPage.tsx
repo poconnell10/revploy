@@ -1,7 +1,11 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { ConfirmDialog } from '@/shared/components/primitives'
+import {
+  ConfirmDialog,
+  CustomDropdown,
+  type DropdownOption,
+} from '@/shared/components/primitives'
 import { supabase } from '@/shared/lib/supabase'
 import { cn } from '@/shared/lib/utils'
 import { AdminModal } from '../shared/AdminModal'
@@ -17,12 +21,12 @@ interface Owner {
   created_at: string
 }
 
-const OWNER_TYPES: { value: OwnerType; label: string }[] = [
-  { value: 'reit', label: 'REIT' },
-  { value: 'pe_fund', label: 'PE Fund' },
-  { value: 'independent', label: 'Independent' },
-  { value: 'management_company', label: 'Management Company' },
-  { value: 'other', label: 'Other' },
+const OWNER_TYPE_OPTIONS: DropdownOption[] = [
+  { value: 'reit', label: 'REIT', dot: '#2563eb' },
+  { value: 'pe_fund', label: 'PE Fund', dot: '#7c3aed' },
+  { value: 'independent', label: 'Independent', dot: '#16a34a' },
+  { value: 'management_company', label: 'Management Company', dot: '#0d1f3c' },
+  { value: 'other', label: 'Other', dot: '#9aa3b2' },
 ]
 
 const OWNER_TYPE_LABEL: Record<OwnerType, string> = {
@@ -294,22 +298,16 @@ export function OwnersPage() {
             >
               Type
             </label>
-            <select
-              id="owner-type"
+            <CustomDropdown
+              options={OWNER_TYPE_OPTIONS}
               value={ownerType}
-              onChange={(e) => {
-                setOwnerType(e.target.value as OwnerType | '')
+              onChange={(v) => {
+                setOwnerType(v as OwnerType | '')
                 if (typeError) setTypeError(false)
               }}
-              className={INPUT_CLASS}
-            >
-              <option value="">Select type…</option>
-              {OWNER_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
+              placeholder="Select type…"
+              width="100%"
+            />
             {typeError && (
               <p className="mt-1 text-xs text-danger">Type is required.</p>
             )}

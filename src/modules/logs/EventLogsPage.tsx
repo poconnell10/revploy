@@ -1,7 +1,21 @@
 import { useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 
+import {
+  CustomDropdown,
+  type DropdownOption,
+} from '@/shared/components/primitives'
 import { supabase } from '@/shared/lib/supabase'
+
+const EVENT_TYPE_OPTIONS: DropdownOption[] = [
+  { value: '', label: 'All Event Types', dot: '#e8ecf2' },
+  { value: 'ttv', label: 'TTV Events', dot: '#2563eb' },
+  { value: 'task', label: 'Task Events', dot: '#d97706' },
+  { value: 'property', label: 'Property Events', dot: '#16a34a' },
+  { value: 'integrity_validation', label: 'Integrity Events', dot: '#16a34a' },
+  { value: 'journal', label: 'Journal Events', dot: '#9aa3b2' },
+  { value: 'user', label: 'User Events', dot: '#0d1f3c' },
+]
 
 interface EventRow {
   id: string
@@ -74,19 +88,22 @@ function payloadPreview(payload: unknown): string {
 
 export function EventLogsPage() {
   const [limit, setLimit] = useState(100)
+  const [eventType, setEventType] = useState('')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   const query = useQuery({
-    queryKey: ['event-logs', limit],
+    queryKey: ['event-logs', limit, eventType],
     placeholderData: keepPreviousData,
     queryFn: async (): Promise<EventPage> => {
-      const { data, error, count } = await supabase
+      let request = supabase
         .from('event_outbox')
         .select('id, event_type, payload, created_at, processed_at', {
           count: 'exact',
         })
         .order('created_at', { ascending: false })
-        .limit(limit)
+      // Prefix match, e.g. 'task' matches 'task.completed', 'task.blocked'.
+      if (eventType) request = request.like('event_type', `${eventType}%`)
+      const { data, error, count } = await request.limit(limit)
       if (error) throw error
       return { rows: (data ?? []) as EventRow[], total: count ?? 0 }
     },
@@ -105,16 +122,24 @@ export function EventLogsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <h1 className="text-lg font-bold text-navy">Event Logs</h1>
-        <button
-          type="button"
-          onClick={() => query.refetch()}
-          disabled={query.isFetching}
-          className="rounded-md border border-gray-100 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:opacity-60"
-        >
-          {query.isFetching ? 'Refreshing…' : 'Refresh'}
-        </button>
+        <div className="flex items-center gap-2.5">
+          <CustomDropdown
+            options={EVENT_TYPE_OPTIONS}
+            value={eventType}
+            onChange={setEventType}
+            width="200px"
+          />
+          <button
+            type="button"
+            onClick={() => query.refetch()}
+            disabled={query.isFetching}
+            className="rounded-md border border-gray-100 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:opacity-60"
+          >
+            {query.isFetching ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-gray-100 bg-white">

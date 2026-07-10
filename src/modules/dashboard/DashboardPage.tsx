@@ -3,12 +3,14 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 
 import {
+  CustomDropdown,
   LifecycleBadge,
   PhaseBadge,
   RiskBadge,
   Sparkline,
   TTVBadge,
   TTVDonut,
+  type DropdownOption,
   type LifecycleState,
   type Phase,
   type RiskLevel,
@@ -19,8 +21,23 @@ import { cn } from '@/shared/lib/utils'
 // Placeholder trend until real historical TTV data is wired in.
 const MOCK_TREND = [65, 70, 68, 75, 78]
 
-type LifecycleFilter = 'all' | LifecycleState
-type RiskFilter = 'all' | RiskLevel
+type LifecycleFilter = '' | LifecycleState
+type RiskFilter = '' | RiskLevel
+
+const LIFECYCLE_OPTIONS: DropdownOption[] = [
+  { value: '', label: 'All States', dot: '#e8ecf2' },
+  { value: 'onboarding', label: 'Onboarding', dot: '#2563eb' },
+  { value: 'activated', label: 'Activated', dot: '#16a34a' },
+  { value: 'archived', label: 'Archived', dot: '#9aa3b2' },
+]
+
+const RISK_OPTIONS: DropdownOption[] = [
+  { value: '', label: 'All Risk Levels', dot: '#e8ecf2' },
+  { value: 'critical', label: 'Critical', dot: '#dc2626' },
+  { value: 'high', label: 'High', dot: '#d97706' },
+  { value: 'medium', label: 'Medium', dot: '#2563eb' },
+  { value: 'low', label: 'Low', dot: '#16a34a' },
+]
 type View = 'table' | 'cards'
 
 interface DashboardProperty {
@@ -429,18 +446,15 @@ function ProductDots({ products }: { products: DashboardProduct[] }) {
   )
 }
 
-const SELECT_CLASS =
-  'rounded-md border border-gray-100 bg-white px-2.5 py-1.5 text-xs text-gray-700 outline-none focus:border-gold'
-
 const TH_CLASS =
   'whitespace-nowrap px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted'
 
 export function DashboardPage() {
   const navigate = useNavigate()
   const [view, setView] = useState<View>('table')
-  const [lifecycle, setLifecycle] = useState<LifecycleFilter>('all')
-  const [region, setRegion] = useState<string>('all')
-  const [risk, setRisk] = useState<RiskFilter>('all')
+  const [lifecycle, setLifecycle] = useState<LifecycleFilter>('')
+  const [region, setRegion] = useState<string>('')
+  const [risk, setRisk] = useState<RiskFilter>('')
 
   const propertiesQuery = usePropertiesQuery()
   const taskCountsQuery = useTaskCountsQuery()
@@ -478,9 +492,9 @@ export function DashboardPage() {
     () =>
       properties.filter(
         (p) =>
-          (lifecycle === 'all' || p.lifecycle_state === lifecycle) &&
-          (region === 'all' || p.region === region) &&
-          (risk === 'all' || p.risk === risk),
+          (lifecycle === '' || p.lifecycle_state === lifecycle) &&
+          (region === '' || p.region === region) &&
+          (risk === '' || p.risk === risk),
       ),
     [properties, lifecycle, region, risk],
   )
@@ -584,39 +598,27 @@ export function DashboardPage() {
           {/* Filters */}
           <div className="flex flex-wrap items-center gap-2.5">
             <span className="text-xs font-medium text-muted">Filter:</span>
-            <select
+            <CustomDropdown
+              options={LIFECYCLE_OPTIONS}
               value={lifecycle}
-              onChange={(e) => setLifecycle(e.target.value as LifecycleFilter)}
-              className={SELECT_CLASS}
-            >
-              <option value="all">All Lifecycle States</option>
-              <option value="onboarding">Onboarding</option>
-              <option value="activated">Activated</option>
-              <option value="archived">Archived</option>
-            </select>
-            <select
+              onChange={(v) => setLifecycle(v as LifecycleFilter)}
+              width="190px"
+            />
+            <CustomDropdown
+              options={[
+                { value: '', label: 'All Regions', dot: '#e8ecf2' },
+                ...regions.map((r) => ({ value: r, label: r, dot: '#374151' })),
+              ]}
               value={region}
-              onChange={(e) => setRegion(e.target.value)}
-              className={SELECT_CLASS}
-            >
-              <option value="all">All Regions</option>
-              {regions.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-            <select
+              onChange={setRegion}
+              width="170px"
+            />
+            <CustomDropdown
+              options={RISK_OPTIONS}
               value={risk}
-              onChange={(e) => setRisk(e.target.value as RiskFilter)}
-              className={SELECT_CLASS}
-            >
-              <option value="all">All Risk Levels</option>
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-              <option value="critical">Critical</option>
-            </select>
+              onChange={(v) => setRisk(v as RiskFilter)}
+              width="170px"
+            />
             <span className="ml-auto font-mono text-xs text-muted">
               {filtered.length} properties
             </span>

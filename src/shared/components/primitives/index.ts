@@ -24,3 +24,6 @@ export type { PhaseGateBannerProps } from './PhaseGateBanner'
 
 export { ConfirmDialog } from './ConfirmDialog'
 export type { ConfirmDialogProps } from './ConfirmDialog'
+
+export { CustomDropdown } from './CustomDropdown'
+export type { CustomDropdownProps, DropdownOption } from './CustomDropdown'

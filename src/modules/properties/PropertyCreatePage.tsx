@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { useForm, type UseFormRegister } from 'react-hook-form'
+import { Controller, useForm, type Control } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
@@ -9,6 +9,7 @@ import {
 } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 
+import { CustomDropdown } from '@/shared/components/primitives'
 import { supabase } from '@/shared/lib/supabase'
 import { useProducts } from '@/shared/products/products'
 import { cn } from '@/shared/lib/utils'
@@ -128,12 +129,12 @@ function EntitySelect({
   label,
   name,
   query,
-  register,
+  control,
 }: {
   label: string
   name: 'region_id' | 'brand_id' | 'owner_id'
   query: UseQueryResult<Entity[]>
-  register: UseFormRegister<FormValues>
+  control: Control<FormValues>
 }) {
   if (query.isLoading) {
     return (
@@ -148,20 +149,24 @@ function EntitySelect({
 
   return (
     <Field label={label}>
-      <select {...register(name)} disabled={empty} className={INPUT_CLASS}>
-        {empty ? (
-          <option value="">None available</option>
-        ) : (
-          <>
-            <option value="">Select…</option>
-            {items.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </>
+      <Controller
+        control={control}
+        name={name}
+        render={({ field }) => (
+          <CustomDropdown
+            options={items.map((item) => ({
+              value: item.id,
+              label: item.name,
+              dot: '#374151',
+            }))}
+            value={field.value ?? ''}
+            onChange={field.onChange}
+            placeholder={empty ? 'None available' : 'Select…'}
+            disabled={empty}
+            width="100%"
+          />
         )}
-      </select>
+      />
     </Field>
   )
 }
@@ -190,6 +195,7 @@ export function PropertyCreatePage() {
 
   const {
     register,
+    control,
     handleSubmit,
     formState: { errors },
   } = useForm<FormValues>({
@@ -403,19 +409,19 @@ export function PropertyCreatePage() {
             label="Region"
             name="region_id"
             query={regions}
-            register={register}
+            control={control}
           />
           <EntitySelect
             label="Brand"
             name="brand_id"
             query={brands}
-            register={register}
+            control={control}
           />
           <EntitySelect
             label="Owner"
             name="owner_id"
             query={owners}
-            register={register}
+            control={control}
           />
         </div>
 

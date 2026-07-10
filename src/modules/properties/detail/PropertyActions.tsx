@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 import {
+  CustomDropdown,
   LifecycleBadge,
   PhaseBadge,
+  type DropdownOption,
   type LifecycleState,
   type Phase,
 } from '@/shared/components/primitives'
@@ -30,7 +32,40 @@ interface ActionContact {
 interface ActionProfile {
   id: string
   full_name: string
+  department: string | null
   avatar_initials: string | null
+}
+
+const DEPARTMENT_COLOR: Record<string, { bg: string; text: string }> = {
+  tech: { bg: '#ede9fe', text: '#7c3aed' },
+  operations: { bg: '#fef3c7', text: '#d97706' },
+  sales: { bg: '#dbeafe', text: '#2563eb' },
+  customer_success: { bg: '#dcfce7', text: '#16a34a' },
+}
+
+const DEPARTMENT_LABEL: Record<string, string> = {
+  tech: 'Tech',
+  operations: 'Operations',
+  sales: 'Sales',
+  customer_success: 'Customer Success',
+}
+
+function departmentColor(department: string | null): {
+  bg: string
+  text: string
+} {
+  return (
+    DEPARTMENT_COLOR[department ?? ''] ?? { bg: '#f4f6f9', text: '#9aa3b2' }
+  )
+}
+
+function nameInitials(fullName: string): string {
+  return fullName
+    .split(' ')
+    .map((n) => n[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2)
 }
 
 type ModalId = 'advance' | 'setdate' | 'tech' | 'csc' | 'archive'
@@ -480,6 +515,19 @@ export function PropertyActions({
             ? 'bg-[#dcfce7] text-[#16a34a]'
             : 'bg-[#dbeafe] text-[#2563eb]'
           const available = profiles.filter((p) => p.id !== current?.user_id)
+          const personOptions: DropdownOption[] = available.map((p) => {
+            const c = departmentColor(p.department)
+            return {
+              value: p.id,
+              label: p.full_name,
+              sub: p.department
+                ? (DEPARTMENT_LABEL[p.department] ?? p.department)
+                : undefined,
+              initials: nameInitials(p.full_name),
+              avatarBg: c.bg,
+              avatarColor: c.text,
+            }
+          })
           return (
             <div className="mb-5">
               <label className={MODAL_LABEL}>
@@ -496,20 +544,13 @@ export function PropertyActions({
                 </span>
               </div>
               <label className={MODAL_LABEL}>Reassign To</label>
-              <select
+              <CustomDropdown
+                options={personOptions}
                 value={reassignTo}
-                onChange={(e) => setReassignTo(e.target.value)}
-                className={INPUT}
-              >
-                <option value="">
-                  {isCsc ? 'Select CSC…' : 'Select Tech Owner…'}
-                </option>
-                {available.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.full_name}
-                  </option>
-                ))}
-              </select>
+                onChange={setReassignTo}
+                placeholder={isCsc ? 'Select CSC…' : 'Select Tech Owner…'}
+                width="100%"
+              />
             </div>
           )
         })()}
