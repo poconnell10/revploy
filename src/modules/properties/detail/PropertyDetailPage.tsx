@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
@@ -1002,6 +1002,7 @@ function EnhancedPhaseSection({
   onNotes,
   onBlockedReason,
   onAssign,
+  headerAction,
 }: {
   phase: Phase
   title: string
@@ -1017,6 +1018,7 @@ function EnhancedPhaseSection({
   onNotes: (taskId: string, value: string, taskName: string) => void
   onBlockedReason: (taskId: string, value: string) => void
   onAssign: (taskId: string, profileId: string) => void
+  headerAction?: ReactNode
 }) {
   return (
     <div className="flex flex-col gap-2.5">
@@ -1035,6 +1037,7 @@ function EnhancedPhaseSection({
             🔒 Locked
           </span>
         )}
+        {headerAction && <div className="ml-auto">{headerAction}</div>}
       </div>
       {gated && phase !== 'data' && (
         <PhaseGateBanner phase={phase as 'configuration' | 'provisioning'} />
@@ -1078,6 +1081,9 @@ export function PropertyDetailPage() {
   // enforce gating, so a disallowed transition is simply rejected on save.
   // Component-state only — resets on reload.
   const [testingMode, setTestingMode] = useState(false)
+  const [ingestToast, setIngestToast] = useState<string | null>(null)
+  const [ingestError, setIngestError] = useState<string | null>(null)
+  const [ingestLoading, setIngestLoading] = useState(false)
 
   // Seeding warnings passed from the create flow (e.g. tasks/checklist RPC
   // failed after the property was created). Dismissible; shown once.
@@ -1311,6 +1317,42 @@ export function PropertyDetailPage() {
 
   const property = propertyQuery.data
   const tasks = tasksQuery.data ?? []
+
+  const simulateIngest = async () => {
+    setIngestError(null)
+    setIngestLoading(true)
+    try {
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ingest-callback`
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${anonKey}`,
+          apikey: anonKey,
+        },
+        body: JSON.stringify({
+          property_code: property.code,
+          s3_bucket: `fpg-revploy-${property.code.toLowerCase()}-ingest`,
+          source: 'manual_test',
+        }),
+      })
+      const payload = (await res.json().catch(() => ({}))) as {
+        success?: boolean
+        error?: string
+      }
+      if (!res.ok || !payload.success) {
+        throw new Error(payload.error || `Ingest failed (${res.status})`)
+      }
+      await queryClient.invalidateQueries({ queryKey: ['tasks', id] })
+      setIngestToast('Data Ingestion triggered')
+      window.setTimeout(() => setIngestToast(null), 2500)
+    } catch (err) {
+      setIngestError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setIngestLoading(false)
+    }
+  }
 
   const byPhase = (phase: Phase) =>
     tasks.filter((t) => t.definition.phase === phase)
@@ -1618,6 +1660,25 @@ export function PropertyDetailPage() {
               onNotes={onTaskNotes}
               onBlockedReason={onTaskBlockedReason}
               onAssign={onTaskAssign}
+              headerAction={
+                testingMode ? (
+                  <div className="flex flex-col items-end gap-1">
+                    <button
+                      type="button"
+                      onClick={() => void simulateIngest()}
+                      disabled={ingestLoading}
+                      className="rounded-md border border-[#f59e0b] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#d97706] transition-colors hover:bg-[#fffbeb] disabled:opacity-60"
+                    >
+                      {ingestLoading ? 'Triggering…' : '⚡ Simulate S3 Trigger'}
+                    </button>
+                    {ingestError && (
+                      <span className="max-w-[240px] text-right text-[11px] font-medium text-danger">
+                        {ingestError}
+                      </span>
+                    )}
+                  </div>
+                ) : undefined
+              }
             />
             <EnhancedPhaseSection
               phase="configuration"
@@ -1670,6 +1731,15 @@ export function PropertyDetailPage() {
 
         {tab === 'settings' && <PropertySettingsTab property={property} />}
       </div>
+
+      {ingestToast && (
+        <div
+          className="fixed bottom-7 left-1/2 z-[999] -translate-x-1/2 whitespace-nowrap rounded-[10px] bg-navy px-5 py-2.5 text-[13px] font-medium text-white"
+          style={{ animation: 'actionModalFadeUp 0.2s ease' }}
+        >
+          ✓ {ingestToast}
+        </div>
+      )}
     </>
   )
 }

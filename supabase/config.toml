@@ -9,3 +9,6 @@ verify_jwt = true
 
 [functions.ttv-daily-scorer]
 verify_jwt = true
+
+[functions.ingest-callback]
+verify_jwt = true

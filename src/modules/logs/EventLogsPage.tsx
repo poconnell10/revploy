@@ -15,18 +15,22 @@ const EVENT_TYPE_OPTIONS: DropdownOption[] = [
   { value: 'integrity_validation', label: 'Integrity Events', dot: '#16a34a' },
   { value: 'journal', label: 'Journal Events', dot: '#9aa3b2' },
   { value: 'user', label: 'User Events', dot: '#0d1f3c' },
+  { value: 'data', label: 'Data Ingest Events', dot: '#16a34a' },
 ]
 
-interface EventRow {
+interface UnifiedEventRow {
   id: string
+  kind: 'outbox' | 'ingest'
   event_type: string
+  property_label: string | null
   payload: unknown
   created_at: string
   processed_at: string | null
+  ingest_status: 'received' | 'processed' | 'failed' | null
 }
 
 interface EventPage {
-  rows: EventRow[]
+  rows: UnifiedEventRow[]
   total: number
 }
 
@@ -44,6 +48,7 @@ const TYPE_STYLES: Record<string, { color: string; bg: string }> = {
   },
   journal: { color: 'var(--color-muted)', bg: 'var(--color-gray-50)' },
   user: { color: 'var(--color-navy)', bg: 'var(--color-gray-100)' },
+  data: { color: 'var(--color-success)', bg: 'var(--color-success-bg)' },
 }
 
 function typeStyle(eventType: string): { color: string; bg: string } {
@@ -86,6 +91,28 @@ function payloadPreview(payload: unknown): string {
   return json.length > 60 ? `${json.slice(0, 60)}…` : json
 }
 
+function ingestStatusBadge(status: UnifiedEventRow['ingest_status']) {
+  if (status === 'processed') {
+    return (
+      <span className="inline-flex items-center whitespace-nowrap rounded-[20px] bg-success-subtle px-2 py-0.5 text-[11px] font-semibold text-success">
+        ✓ Processed
+      </span>
+    )
+  }
+  if (status === 'failed') {
+    return (
+      <span className="inline-flex items-center whitespace-nowrap rounded-[20px] bg-danger-subtle px-2 py-0.5 text-[11px] font-semibold text-danger">
+        ✗ Failed
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center whitespace-nowrap rounded-[20px] bg-gray-50 px-2 py-0.5 text-[11px] font-semibold text-muted">
+      Pending
+    </span>
+  )
+}
+
 export function EventLogsPage() {
   const [limit, setLimit] = useState(100)
   const [eventType, setEventType] = useState('')
@@ -95,17 +122,99 @@ export function EventLogsPage() {
     queryKey: ['event-logs', limit, eventType],
     placeholderData: keepPreviousData,
     queryFn: async (): Promise<EventPage> => {
-      let request = supabase
-        .from('event_outbox')
-        .select('id, event_type, payload, created_at, processed_at', {
-          count: 'exact',
-        })
-        .order('created_at', { ascending: false })
-      // Prefix match, e.g. 'task' matches 'task.completed', 'task.blocked'.
-      if (eventType) request = request.like('event_type', `${eventType}%`)
-      const { data, error, count } = await request.limit(limit)
-      if (error) throw error
-      return { rows: (data ?? []) as EventRow[], total: count ?? 0 }
+      const includeOutbox = eventType !== 'data'
+      const includeIngest = !eventType || eventType === 'data'
+
+      const outboxPromise = includeOutbox
+        ? (() => {
+            let request = supabase
+              .from('event_outbox')
+              .select('id, event_type, payload, created_at, processed_at', {
+                count: 'exact',
+              })
+              .order('created_at', { ascending: false })
+            if (eventType) {
+              request = request.like('event_type', `${eventType}%`)
+            }
+            return request.limit(limit)
+          })()
+        : Promise.resolve({ data: [], error: null, count: 0 })
+
+      const ingestPromise = includeIngest
+        ? supabase
+            .from('ingest_events')
+            .select(
+              'id, property_code, s3_bucket, s3_key, source, status, tasks_updated, error_message, processed_at, created_at, properties(code)',
+              { count: 'exact' },
+            )
+            .order('created_at', { ascending: false })
+            .limit(limit)
+        : Promise.resolve({ data: [], error: null, count: 0 })
+
+      const [outboxRes, ingestRes] = await Promise.all([
+        outboxPromise,
+        ingestPromise,
+      ])
+
+      if (outboxRes.error) throw outboxRes.error
+      if (ingestRes.error) throw ingestRes.error
+
+      const outboxRows: UnifiedEventRow[] = (outboxRes.data ?? []).map(
+        (event) => {
+          const propertyId = getPropertyId(event.payload)
+          return {
+            id: `outbox:${event.id}`,
+            kind: 'outbox',
+            event_type: event.event_type,
+            property_label: propertyId
+              ? `${propertyId.slice(0, 8)}…`
+              : null,
+            payload: event.payload,
+            created_at: event.created_at,
+            processed_at: event.processed_at,
+            ingest_status: null,
+          }
+        },
+      )
+
+      const ingestRows: UnifiedEventRow[] = (ingestRes.data ?? []).map(
+        (event) => {
+          const props = event.properties as
+            | { code: string }
+            | { code: string }[]
+            | null
+          const joinedCode = Array.isArray(props)
+            ? props[0]?.code
+            : props?.code
+          return {
+            id: `ingest:${event.id}`,
+            kind: 'ingest',
+            event_type: 'data.ingested',
+            property_label: joinedCode || event.property_code || null,
+            payload: {
+              s3_bucket: event.s3_bucket,
+              s3_key: event.s3_key,
+              source: event.source,
+              status: event.status,
+              tasks_updated: event.tasks_updated,
+              error_message: event.error_message,
+            },
+            created_at: event.created_at,
+            processed_at: event.processed_at,
+            ingest_status: event.status as UnifiedEventRow['ingest_status'],
+          }
+        },
+      )
+
+      const merged = [...outboxRows, ...ingestRows].sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      )
+
+      return {
+        rows: merged.slice(0, limit),
+        total: (outboxRes.count ?? 0) + (ingestRes.count ?? 0),
+      }
     },
   })
 
@@ -176,7 +285,6 @@ export function EventLogsPage() {
               <tbody>
                 {rows.map((event) => {
                   const style = typeStyle(event.event_type)
-                  const propertyId = getPropertyId(event.payload)
                   const isOpen = expanded.has(event.id)
                   return (
                     <tr
@@ -196,7 +304,7 @@ export function EventLogsPage() {
                         </span>
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-muted">
-                        {propertyId ? `${propertyId.slice(0, 8)}…` : '—'}
+                        {event.property_label ?? '—'}
                       </td>
                       <td className="px-4 py-3">
                         {isOpen ? (
@@ -210,7 +318,9 @@ export function EventLogsPage() {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        {event.processed_at ? (
+                        {event.kind === 'ingest' ? (
+                          ingestStatusBadge(event.ingest_status)
+                        ) : event.processed_at ? (
                           <span className="inline-flex items-center whitespace-nowrap rounded-[20px] bg-success-subtle px-2 py-0.5 text-[11px] font-semibold text-success">
                             ✓ Processed
                           </span>
