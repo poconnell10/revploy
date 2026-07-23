@@ -1,0 +1,600 @@
+import { useState, type ReactNode } from 'react'
+import { Controller, useForm, type Control } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
+import {
+  useMutation,
+  useQuery,
+  type UseQueryResult,
+} from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
+
+import { CustomDropdown } from '@/shared/components/primitives'
+import { supabase } from '@/shared/lib/supabase'
+import { useProducts } from '@/shared/products/products'
+import { cn } from '@/shared/lib/utils'
+
+const TIMEZONES = [
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'America/Phoenix',
+  'Europe/London',
+  'Europe/Paris',
+  'Asia/Dubai',
+  'Asia/Singapore',
+  'Asia/Tokyo',
+]
+
+const schema = z.object({
+  name: z.string().min(1, 'Property name is required'),
+  city: z.string().min(1, 'City is required'),
+  country: z.string().min(1, 'Country is required'),
+  room_count: z
+    .number({ invalid_type_error: 'Room count is required' })
+    .int('Must be a whole number')
+    .min(1, 'Must be at least 1'),
+  timezone: z.string().min(1, 'Timezone is required'),
+  region_id: z.string().optional(),
+  brand_id: z.string().optional(),
+  owner_id: z.string().optional(),
+  start_date: z.string().min(1, 'Start date is required'),
+  activation_date: z.string().optional(),
+})
+
+type FormValues = z.infer<typeof schema>
+
+interface Entity {
+  id: string
+  name: string
+}
+
+interface OwnerEntity extends Entity {
+  owner_type: string | null
+}
+
+const INPUT_CLASS =
+  'w-full rounded-lg border border-gray-100 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-gold focus:ring-1 focus:ring-gold'
+
+function useEntities(table: 'regions' | 'brands') {
+  return useQuery({
+    queryKey: [table],
+    queryFn: async (): Promise<Entity[]> => {
+      const { data, error } = await supabase
+        .from(table)
+        .select('id, name')
+        .order('name')
+      if (error) throw error
+      return (data ?? []) as Entity[]
+    },
+  })
+}
+
+function useOwners() {
+  return useQuery({
+    queryKey: ['owners'],
+    queryFn: async (): Promise<OwnerEntity[]> => {
+      const { data, error } = await supabase
+        .from('owners')
+        .select('id, name, owner_type')
+        .order('name')
+      if (error) throw error
+      return (data ?? []) as OwnerEntity[]
+    },
+  })
+}
+
+function getErrorMessage(error: unknown): string {
+  if (
+    error &&
+    typeof error === 'object' &&
+    'message' in error &&
+    typeof (error as { message: unknown }).message === 'string'
+  ) {
+    return (error as { message: string }).message
+  }
+  return 'Failed to create property. Please try again.'
+}
+
+function SectionHeading({
+  children,
+  className,
+}: {
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <h2
+      className={cn(
+        'mb-4 border-b border-gray-100 pb-2 text-[13px] font-semibold uppercase tracking-wide text-navy',
+        className,
+      )}
+    >
+      {children}
+    </h2>
+  )
+}
+
+function Field({
+  label,
+  htmlFor,
+  error,
+  children,
+  className,
+}: {
+  label: string
+  htmlFor?: string
+  error?: string
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <div className={className}>
+      <label
+        htmlFor={htmlFor}
+        className="mb-1.5 block text-[13px] font-medium text-gray-700"
+      >
+        {label}
+      </label>
+      {children}
+      {error && <p className="mt-1 text-xs text-danger">{error}</p>}
+    </div>
+  )
+}
+
+function EntitySelect({
+  label,
+  name,
+  query,
+  control,
+}: {
+  label: string
+  name: 'region_id' | 'brand_id'
+  query: UseQueryResult<Entity[]>
+  control: Control<FormValues>
+}) {
+  if (query.isLoading) {
+    return (
+      <Field label={label}>
+        <div className="h-[42px] w-full animate-pulse rounded-lg bg-gray-100" />
+      </Field>
+    )
+  }
+
+  const items = query.data ?? []
+
+  return (
+    <Field label={label}>
+      <Controller
+        name={name}
+        control={control}
+        render={({ field }) => (
+          <CustomDropdown
+            value={field.value ?? ''}
+            onChange={field.onChange}
+            placeholder="Select…"
+            width="100%"
+            options={[
+              { value: '', label: 'None' },
+              ...items.map((item) => ({
+                value: item.id,
+                label: item.name,
+                dot: '#374151',
+              })),
+            ]}
+          />
+        )}
+      />
+    </Field>
+  )
+}
+
+function OwnerSelect({
+  query,
+  control,
+}: {
+  query: UseQueryResult<OwnerEntity[]>
+  control: Control<FormValues>
+}) {
+  if (query.isLoading) {
+    return (
+      <Field label="Owner">
+        <div className="h-[42px] w-full animate-pulse rounded-lg bg-gray-100" />
+      </Field>
+    )
+  }
+
+  const owners = query.data ?? []
+
+  return (
+    <Field label="Owner">
+      <Controller
+        name="owner_id"
+        control={control}
+        render={({ field }) => (
+          <CustomDropdown
+            value={field.value ?? ''}
+            onChange={field.onChange}
+            placeholder="Select…"
+            width="100%"
+            options={[
+              { value: '', label: 'None' },
+              ...owners.map((o) => ({
+                value: o.id,
+                label: o.name,
+                sub: o.owner_type
+                  ? o.owner_type.replace('_', ' ')
+                  : undefined,
+                dot: '#374151',
+              })),
+            ]}
+          />
+        )}
+      />
+    </Field>
+  )
+}
+
+export function PropertyCreatePage() {
+  const navigate = useNavigate()
+  const regions = useEntities('regions')
+  const brands = useEntities('brands')
+  const owners = useOwners()
+  const productsQuery = useProducts()
+
+  const [selectedProducts, setSelectedProducts] = useState<Set<string>>(
+    new Set(),
+  )
+  const [productError, setProductError] = useState(false)
+
+  const toggleProduct = (productId: string) => {
+    setProductError(false)
+    setSelectedProducts((prev) => {
+      const next = new Set(prev)
+      if (next.has(productId)) next.delete(productId)
+      else next.add(productId)
+      return next
+    })
+  }
+
+  const {
+    register,
+    control,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      name: '',
+      city: '',
+      country: '',
+      timezone: '',
+      region_id: '',
+      brand_id: '',
+      owner_id: '',
+      start_date: '',
+      activation_date: '',
+    },
+  })
+
+  const createProperty = useMutation({
+    mutationFn: async ({
+      values,
+      productIds,
+    }: {
+      values: FormValues
+      productIds: string[]
+    }): Promise<{ propertyId: string; warnings: string[] }> => {
+      const { data: code, error: codeError } = await supabase.rpc(
+        'generate_display_code',
+        { p_prefix: 'PRP' },
+      )
+      if (codeError) throw codeError
+
+      const { data: inserted, error: insertError } = await supabase
+        .from('properties')
+        .insert({
+          code,
+          name: values.name,
+          city: values.city,
+          country: values.country,
+          room_count: values.room_count,
+          timezone: values.timezone,
+          region_id: values.region_id || null,
+          brand_id: values.brand_id || null,
+          owner_id: values.owner_id || null,
+          start_date: values.start_date,
+          activation_date: values.activation_date || null,
+          lifecycle_state: 'onboarding',
+          phase_current: 'data',
+        })
+        .select('id')
+        .single()
+      if (insertError) throw insertError
+
+      const propertyId = inserted.id as string
+
+      // Each selected product gets its own property_products row plus its own
+      // set of 20 tasks + 22 checklist items. The product link is the hard
+      // step; the two seeding RPCs are best-effort (logged + surfaced as a
+      // warning) so navigation to the new property is never blocked.
+      const warnings: string[] = []
+
+      for (const productId of productIds) {
+        const { data: pp, error: ppError } = await supabase
+          .from('property_products')
+          .insert({
+            property_id: propertyId,
+            product_id: productId,
+            lifecycle_state: 'onboarding',
+            phase_current: 'data',
+          })
+          .select('id')
+          .single()
+        if (ppError) throw ppError
+
+        const propertyProductId = pp.id as string
+
+        const { error: tasksError } = await supabase.rpc(
+          'create_product_tasks',
+          {
+            p_property_id: propertyId,
+            p_property_product_id: propertyProductId,
+          },
+        )
+        if (tasksError) {
+          console.error(
+            '[property-create] create_product_tasks failed',
+            tasksError,
+          )
+          warnings.push(
+            'Property created but some product tasks could not be seeded. Please contact support.',
+          )
+        }
+
+        const { error: checklistError } = await supabase.rpc(
+          'create_product_checklist_items',
+          {
+            p_property_id: propertyId,
+            p_property_product_id: propertyProductId,
+          },
+        )
+        if (checklistError) {
+          console.error(
+            '[property-create] create_product_checklist_items failed',
+            checklistError,
+          )
+          warnings.push(
+            'Property created but some product checklist items could not be seeded. Please contact support.',
+          )
+        }
+      }
+
+      return { propertyId, warnings: Array.from(new Set(warnings)) }
+    },
+    onSuccess: ({ propertyId, warnings }) =>
+      navigate(`/properties/${propertyId}`, {
+        state: warnings.length > 0 ? { seedWarnings: warnings } : undefined,
+      }),
+  })
+
+  const onSubmit = handleSubmit((values) => {
+    if (selectedProducts.size === 0) {
+      setProductError(true)
+      return
+    }
+    createProperty.mutate({ values, productIds: Array.from(selectedProducts) })
+  })
+
+  return (
+    <div className="mx-auto max-w-[720px]">
+      <div className="mb-4">
+        <div className="flex items-center gap-1.5 text-[13px] text-muted">
+          <button
+            type="button"
+            onClick={() => navigate('/dashboard')}
+            className="transition-colors hover:text-gray-700"
+          >
+            Dashboard
+          </button>
+          <span className="text-[#d1d5db]">/</span>
+          <span className="font-medium text-navy">Add Property</span>
+        </div>
+        <h1 className="mt-1 text-lg font-bold text-navy">Add Property</h1>
+      </div>
+
+      <form
+        onSubmit={onSubmit}
+        noValidate
+        className="rounded-xl border border-gray-100 bg-white p-8"
+      >
+        {/* Section 1 — Property Details */}
+        <SectionHeading>Property Details</SectionHeading>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field
+            label="Property Name"
+            htmlFor="name"
+            error={errors.name?.message}
+            className="sm:col-span-2"
+          >
+            <input id="name" {...register('name')} className={INPUT_CLASS} />
+          </Field>
+          <Field label="City" htmlFor="city" error={errors.city?.message}>
+            <input id="city" {...register('city')} className={INPUT_CLASS} />
+          </Field>
+          <Field
+            label="Country"
+            htmlFor="country"
+            error={errors.country?.message}
+          >
+            <input
+              id="country"
+              {...register('country')}
+              className={INPUT_CLASS}
+            />
+          </Field>
+          <Field
+            label="Room Count"
+            htmlFor="room_count"
+            error={errors.room_count?.message}
+          >
+            <input
+              id="room_count"
+              type="number"
+              min={1}
+              {...register('room_count', { valueAsNumber: true })}
+              className={INPUT_CLASS}
+            />
+          </Field>
+          <Field
+            label="Timezone"
+            htmlFor="timezone"
+            error={errors.timezone?.message}
+          >
+            <select
+              id="timezone"
+              {...register('timezone')}
+              className={INPUT_CLASS}
+            >
+              <option value="">Select timezone…</option>
+              {TIMEZONES.map((tz) => (
+                <option key={tz} value={tz}>
+                  {tz}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+
+        {/* Section 2 — Assignment */}
+        <SectionHeading className="mt-7">Assignment</SectionHeading>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <EntitySelect
+            label="Region"
+            name="region_id"
+            query={regions}
+            control={control}
+          />
+          <EntitySelect
+            label="Brand"
+            name="brand_id"
+            query={brands}
+            control={control}
+          />
+          <OwnerSelect query={owners} control={control} />
+        </div>
+
+        {/* Section 3 — Products */}
+        <SectionHeading className="mt-7">Products</SectionHeading>
+        <p className="-mt-2 mb-4 text-[13px] text-muted">
+          Select the FPG products this property will use. At least one product
+          is required.
+        </p>
+        {productsQuery.isLoading ? (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={i}
+                className="h-[72px] animate-pulse rounded-lg bg-gray-100"
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {(productsQuery.data ?? []).map((product) => {
+              const selected = selectedProducts.has(product.id)
+              return (
+                <label
+                  key={product.id}
+                  className={cn(
+                    'flex cursor-pointer items-start gap-3 rounded-lg border p-3.5 transition-colors',
+                    selected
+                      ? 'border-gold bg-gold-light'
+                      : 'border-gray-100 bg-white hover:bg-gray-50',
+                  )}
+                >
+                  <span
+                    className="mt-1 h-3 w-3 shrink-0 rounded-full"
+                    style={{ background: product.color }}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-bold text-navy">
+                      {product.display_name}
+                    </div>
+                    <div className="text-xs text-gray-400">
+                      {product.description}
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    onChange={() => toggleProduct(product.id)}
+                    className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-gold"
+                  />
+                </label>
+              )
+            })}
+          </div>
+        )}
+        {productError && (
+          <p className="mt-2 text-xs text-danger">
+            At least one product must be selected.
+          </p>
+        )}
+
+        {/* Section 4 — Timeline */}
+        <SectionHeading className="mt-7">Timeline</SectionHeading>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field
+            label="Start Date"
+            htmlFor="start_date"
+            error={errors.start_date?.message}
+          >
+            <input
+              id="start_date"
+              type="date"
+              {...register('start_date')}
+              className={INPUT_CLASS}
+            />
+          </Field>
+          <Field
+            label="Target Activation Date"
+            htmlFor="activation_date"
+            error={errors.activation_date?.message}
+          >
+            <input
+              id="activation_date"
+              type="date"
+              {...register('activation_date')}
+              className={INPUT_CLASS}
+            />
+          </Field>
+        </div>
+
+        {createProperty.isError && (
+          <div className="mt-6 rounded-lg border border-[#fecaca] bg-danger-subtle px-4 py-3 text-[13px] text-danger">
+            {getErrorMessage(createProperty.error)}
+          </div>
+        )}
+
+        <div className="mt-7 flex items-center justify-end gap-2 border-t border-gray-100 pt-6">
+          <button
+            type="button"
+            onClick={() => navigate('/dashboard')}
+            className="rounded-md border border-gray-100 bg-gray-50 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={createProperty.isPending}
+            className="rounded-md bg-gold px-4 py-2 text-sm font-semibold text-navy transition-[filter] hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {createProperty.isPending ? 'Creating…' : 'Create Property'}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}

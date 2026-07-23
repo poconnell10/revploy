@@ -5,6 +5,14 @@ import { ProtectedRoute } from '@/shared/rbac/ProtectedRoute'
 import { useAuth } from '@/shared/rbac/auth-context'
 import { AppShell } from '@/layouts/AppShell'
 import { LoginPage } from '@/modules/auth/LoginPage'
+import { DashboardPage } from '@/modules/dashboard/DashboardPage'
+import { PropertiesPage } from '@/modules/properties/PropertiesPage'
+import { PropertyCreatePage } from '@/modules/properties/PropertyCreatePage'
+import { PropertyDetailPage } from '@/modules/properties/detail/PropertyDetailPage'
+import { BrandsPage } from '@/modules/admin/brands/BrandsPage'
+import { OwnersPage } from '@/modules/admin/owners/OwnersPage'
+import { RegionsPage } from '@/modules/admin/regions/RegionsPage'
+import { EventLogsPage } from '@/modules/logs/EventLogsPage'
 
 /** Gate a subtree behind one or more roles; redirect elsewhere if unauthorized. */
 function RequireRole({
@@ -55,21 +63,35 @@ export function AppRoutes() {
 
       <Route
         path="/dashboard"
-        element={<Shell title="Dashboard">{<div>Dashboard</div>}</Shell>}
+        element={
+          <Shell title="Dashboard">
+            <DashboardPage />
+          </Shell>
+        }
       />
 
       <Route
         path="/properties"
-        element={<Shell title="Properties">{<div>Properties</div>}</Shell>}
+        element={
+          <Shell title="Properties">
+            <PropertiesPage />
+          </Shell>
+        }
       />
       <Route
         path="/properties/new"
-        element={<Shell title="New Property">{<div>New Property</div>}</Shell>}
+        element={
+          <Shell title="Add Property">
+            <PropertyCreatePage />
+          </Shell>
+        }
       />
       <Route
         path="/properties/:id"
         element={
-          <Shell title="Property Detail">{<div>Property Detail</div>}</Shell>
+          <Shell title="Property Detail">
+            <PropertyDetailPage />
+          </Shell>
         }
       />
 
@@ -79,20 +101,36 @@ export function AppRoutes() {
       />
       <Route
         path="/admin/brands"
-        element={<AdminShell title="Brands">{<div>Brands</div>}</AdminShell>}
+        element={
+          <AdminShell title="Brands">
+            <BrandsPage />
+          </AdminShell>
+        }
       />
       <Route
         path="/admin/owners"
-        element={<AdminShell title="Owners">{<div>Owners</div>}</AdminShell>}
+        element={
+          <AdminShell title="Owners">
+            <OwnersPage />
+          </AdminShell>
+        }
       />
       <Route
         path="/admin/regions"
-        element={<AdminShell title="Regions">{<div>Regions</div>}</AdminShell>}
+        element={
+          <AdminShell title="Regions">
+            <RegionsPage />
+          </AdminShell>
+        }
       />
 
       <Route
         path="/logs"
-        element={<Shell title="Event Logs">{<div>Event Logs</div>}</Shell>}
+        element={
+          <Shell title="Event Logs">
+            <EventLogsPage />
+          </Shell>
+        }
       />
     </Routes>
   )

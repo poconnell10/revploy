@@ -31,10 +31,28 @@ const config: Config = {
           700: 'var(--color-gray-700)',
           900: 'var(--color-gray-900)',
         },
-        success: 'var(--color-success)',
-        warning: 'var(--color-warning)',
-        danger: 'var(--color-danger)',
-        info: 'var(--color-info)',
+        success: {
+          DEFAULT: 'var(--color-success)',
+          subtle: 'var(--color-success-bg)',
+        },
+        warning: {
+          DEFAULT: 'var(--color-warning)',
+          subtle: 'var(--color-warning-bg)',
+          strong: 'var(--color-warning-strong)',
+          border: 'var(--color-warning-border)',
+        },
+        danger: {
+          DEFAULT: 'var(--color-danger)',
+          subtle: 'var(--color-danger-bg)',
+        },
+        info: {
+          DEFAULT: 'var(--color-info)',
+          subtle: 'var(--color-info-bg)',
+        },
+        purple: {
+          DEFAULT: 'var(--color-purple)',
+          subtle: 'var(--color-purple-bg)',
+        },
         muted: 'var(--color-muted)',
 
         // shadcn/ui semantic tokens

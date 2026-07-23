@@ -23,6 +23,16 @@ export const colors = {
   danger: '#dc2626',
   info: '#2563eb',
   muted: '#9aa3b2',
+  purple: '#7c3aed',
+  // Semantic tint backgrounds
+  successBg: '#dcfce7',
+  warningBg: '#fef3c7',
+  dangerBg: '#fee2e2',
+  infoBg: '#dbeafe',
+  purpleBg: '#ede9fe',
+  // Warning banner accents
+  warningStrong: '#92400e',
+  warningBorder: '#fde68a',
 } as const
 
 export const fonts = {
@@ -47,6 +57,14 @@ export const cssVars = {
   danger: '--color-danger',
   info: '--color-info',
   muted: '--color-muted',
+  purple: '--color-purple',
+  successBg: '--color-success-bg',
+  warningBg: '--color-warning-bg',
+  dangerBg: '--color-danger-bg',
+  infoBg: '--color-info-bg',
+  purpleBg: '--color-purple-bg',
+  warningStrong: '--color-warning-strong',
+  warningBorder: '--color-warning-border',
   fontSans: '--font-sans',
   fontMono: '--font-mono',
 } as const
