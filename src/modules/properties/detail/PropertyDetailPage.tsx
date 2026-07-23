@@ -819,27 +819,15 @@ function EnhancedTaskRow({
         opacity: gated ? 0.45 : 1,
       }}
     >
-      {/* Collapsed row: name + description left, controls right */}
+      {/* Collapsed single-line row */}
       <div
         onClick={() => !gated && setExpanded((v) => !v)}
-        className="flex items-center gap-3 px-4 py-2.5"
+        className="flex h-12 items-center gap-3 px-4"
         style={{ cursor: gated ? 'not-allowed' : 'pointer' }}
       >
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-bold text-navy">
-            {def.display_name}
-          </div>
-          {def.description?.trim() && !expanded && (
-            <div className="mt-0.5 max-w-[600px] truncate text-[11px] font-normal text-gray-400">
-              {def.description}
-            </div>
-          )}
-          {def.description?.trim() && expanded && (
-            <div className="mt-0.5 max-w-[600px] text-[11px] font-normal leading-snug text-gray-400">
-              {def.description}
-            </div>
-          )}
-        </div>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-navy">
+          {def.display_name}
+        </span>
         {def.is_phase_gate && (
           <span className="shrink-0 whitespace-nowrap rounded border border-[#fde8a5] bg-gold-light px-1.5 py-0.5 text-[10px] font-semibold text-warning">
             Phase Gate
@@ -910,88 +898,95 @@ function EnhancedTaskRow({
         </div>
       )}
 
-      {/* Expanded 3-column detail */}
+      {/* Expanded detail */}
       {!gated && expanded && (
         <div
-          className="grid grid-cols-1 gap-4 bg-gray-50 px-4 py-3 sm:grid-cols-3"
+          className="bg-gray-50 px-4 py-3"
           style={{ borderTop: '1px solid #f4f6f9' }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Assignee */}
-          <div>
-            <div className={DATA_FIELD_LABEL}>Assigned To</div>
-            {task.assigned_to ? (
-              <div className="flex items-center gap-2">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gold text-[10px] font-bold text-navy">
-                  {assigneeInitial}
-                </span>
-                <span className="min-w-0 truncate text-[12px] text-gray-700">
-                  {assigneeName}
-                </span>
-                <DepartmentChip
-                  department={assigneeProfile?.department ?? null}
-                />
-              </div>
-            ) : (
-              <div className="text-[12px] text-muted">Unassigned</div>
-            )}
-            <AssignPicker
-              profiles={profiles}
-              onAssign={(profileId) => onAssign(task.id, profileId)}
-            />
-          </div>
-
-          {/* Dates */}
-          <div>
-            <div className={DATA_FIELD_LABEL}>Start Date</div>
-            <input
-              type="date"
-              value={dateVal}
-              onChange={(e) => {
-                setDateVal(e.target.value)
-                onDueDate(task.id, e.target.value)
-              }}
-              className={UNDERLINE_INPUT}
-            />
-            <div className={cn(DATA_FIELD_LABEL, 'mt-2')}>Completed</div>
-            <div
-              className={cn(
-                'text-[12px]',
-                task.status === 'complete' ? 'text-gray-700' : 'text-gray-400',
+          {def.description?.trim() && (
+            <p className="mb-3 max-w-[680px] text-[11px] font-normal text-[#9aa3b2] [line-height:1.5]">
+              {def.description}
+            </p>
+          )}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {/* Assignee */}
+            <div>
+              <div className={DATA_FIELD_LABEL}>Assigned To</div>
+              {task.assigned_to ? (
+                <div className="flex items-center gap-2">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gold text-[10px] font-bold text-navy">
+                    {assigneeInitial}
+                  </span>
+                  <span className="min-w-0 truncate text-[12px] text-gray-700">
+                    {assigneeName}
+                  </span>
+                  <DepartmentChip
+                    department={assigneeProfile?.department ?? null}
+                  />
+                </div>
+              ) : (
+                <div className="text-[12px] text-muted">Unassigned</div>
               )}
-            >
-              {task.status === 'complete'
-                ? formatTimestamp(task.completed_at)
-                : '—'}
+              <AssignPicker
+                profiles={profiles}
+                onAssign={(profileId) => onAssign(task.id, profileId)}
+              />
             </div>
-          </div>
 
-          {/* Notes */}
-          <div>
-            <div className={DATA_FIELD_LABEL}>Notes</div>
-            <textarea
-              rows={2}
-              value={notesVal}
-              placeholder="Add a note..."
-              onChange={(e) => setNotesVal(e.target.value)}
-              onBlur={() => saveNote(false)}
-              className={cn(UNDERLINE_INPUT, 'resize-none bg-gray-50')}
-            />
-            <div className="mt-1 flex h-5 items-center gap-2">
-              {notesVal.trim() && (
-                <button
-                  type="button"
-                  onClick={() => saveNote(true)}
-                  className="rounded bg-gold px-2 py-0.5 text-[11px] font-semibold text-navy transition-[filter] hover:brightness-95"
-                >
-                  Post
-                </button>
-              )}
-              {noteSaved && (
-                <span className="text-[11px] font-medium text-success">
-                  Saved
-                </span>
-              )}
+            {/* Dates */}
+            <div>
+              <div className={DATA_FIELD_LABEL}>Start Date</div>
+              <input
+                type="date"
+                value={dateVal}
+                onChange={(e) => {
+                  setDateVal(e.target.value)
+                  onDueDate(task.id, e.target.value)
+                }}
+                className={UNDERLINE_INPUT}
+              />
+              <div className={cn(DATA_FIELD_LABEL, 'mt-2')}>Completed</div>
+              <div
+                className={cn(
+                  'text-[12px]',
+                  task.status === 'complete' ? 'text-gray-700' : 'text-gray-400',
+                )}
+              >
+                {task.status === 'complete'
+                  ? formatTimestamp(task.completed_at)
+                  : '—'}
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div>
+              <div className={DATA_FIELD_LABEL}>Notes</div>
+              <textarea
+                rows={2}
+                value={notesVal}
+                placeholder="Add a note..."
+                onChange={(e) => setNotesVal(e.target.value)}
+                onBlur={() => saveNote(false)}
+                className={cn(UNDERLINE_INPUT, 'resize-none bg-gray-50')}
+              />
+              <div className="mt-1 flex h-5 items-center gap-2">
+                {notesVal.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => saveNote(true)}
+                    className="rounded bg-gold px-2 py-0.5 text-[11px] font-semibold text-navy transition-[filter] hover:brightness-95"
+                  >
+                    Post
+                  </button>
+                )}
+                {noteSaved && (
+                  <span className="text-[11px] font-medium text-success">
+                    Saved
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </div>
