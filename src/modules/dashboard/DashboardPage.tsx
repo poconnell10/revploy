@@ -355,30 +355,51 @@ function exportCsv(rows: DashboardProperty[]): void {
   URL.revokeObjectURL(url)
 }
 
+type ActiveCard = 'total' | 'activated' | 'ttv' | 'risk' | null
+
 function StatCard({
   label,
   value,
   sub,
   valueClassName = 'text-navy',
   critical = false,
+  active = false,
+  onClick,
+  onClear,
 }: {
   label: string
   value: string
   sub: string
   valueClassName?: string
   critical?: boolean
+  active?: boolean
+  onClick: () => void
+  onClear: () => void
 }) {
   return (
     <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onClick()
+        }
+      }}
       className={cn(
-        'rounded-xl border p-4',
-        critical ? 'border-[#fecaca] bg-[#fff5f5]' : 'border-gray-100 bg-white',
+        'relative cursor-pointer rounded-xl border p-4 text-left transition-shadow hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)]',
+        active
+          ? 'border-gold bg-gold-light'
+          : critical
+            ? 'border-[#fecaca] bg-[#fff5f5]'
+            : 'border-gray-100 bg-white',
       )}
     >
       <div
         className={cn(
           'mb-1.5 text-[11px] font-medium uppercase tracking-wide',
-          critical ? 'text-danger' : 'text-muted',
+          !active && critical ? 'text-danger' : 'text-muted',
         )}
       >
         {label}
@@ -393,12 +414,24 @@ function StatCard({
       </div>
       <div
         className={cn(
-          'mt-1.5 text-[11.5px]',
-          critical ? 'text-danger' : 'text-muted',
+          'mt-1.5 pr-14 text-[11.5px]',
+          !active && critical ? 'text-danger' : 'text-muted',
         )}
       >
         {sub}
       </div>
+      {active && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onClear()
+          }}
+          className="absolute bottom-3 right-3 text-[11px] text-gray-400 hover:text-gray-600"
+        >
+          ✕ Clear
+        </button>
+      )}
     </div>
   )
 }
@@ -455,6 +488,7 @@ export function DashboardPage() {
   const [lifecycle, setLifecycle] = useState<LifecycleFilter>('')
   const [region, setRegion] = useState<string>('')
   const [risk, setRisk] = useState<RiskFilter>('')
+  const [activeCard, setActiveCard] = useState<ActiveCard>(null)
 
   const propertiesQuery = usePropertiesQuery()
   const taskCountsQuery = useTaskCountsQuery()
@@ -488,16 +522,75 @@ export function DashboardPage() {
     [properties],
   )
 
-  const filtered = useMemo(
-    () =>
-      properties.filter(
-        (p) =>
-          (lifecycle === '' || p.lifecycle_state === lifecycle) &&
-          (region === '' || p.region === region) &&
-          (risk === '' || p.risk === risk),
-      ),
-    [properties, lifecycle, region, risk],
-  )
+  const filtered = useMemo(() => {
+    const rows = properties.filter(
+      (p) =>
+        (lifecycle === '' || p.lifecycle_state === lifecycle) &&
+        (region === '' || p.region === region) &&
+        (risk === '' || p.risk === risk),
+    )
+    if (activeCard !== 'ttv') return rows
+    return [...rows].sort((a, b) => a.ttv_overall - b.ttv_overall)
+  }, [properties, lifecycle, region, risk, activeCard])
+
+  const clearActiveCard = () => setActiveCard(null)
+
+  const onLifecycleChange = (value: LifecycleFilter) => {
+    setLifecycle(value)
+    clearActiveCard()
+  }
+
+  const onRegionChange = (value: string) => {
+    setRegion(value)
+    clearActiveCard()
+  }
+
+  const onRiskChange = (value: RiskFilter) => {
+    setRisk(value)
+    clearActiveCard()
+  }
+
+  const selectTotalCard = () => {
+    setLifecycle('')
+    setRegion('')
+    setRisk('')
+    setActiveCard('total')
+  }
+
+  const selectActivatedCard = () => {
+    setLifecycle('activated')
+    setActiveCard('activated')
+  }
+
+  const selectTtvCard = () => {
+    setActiveCard('ttv')
+  }
+
+  const selectRiskCard = () => {
+    setRisk('critical')
+    setActiveCard('risk')
+  }
+
+  const clearTotalCard = () => {
+    setLifecycle('')
+    setRegion('')
+    setRisk('')
+    clearActiveCard()
+  }
+
+  const clearActivatedCard = () => {
+    setLifecycle('')
+    clearActiveCard()
+  }
+
+  const clearTtvCard = () => {
+    clearActiveCard()
+  }
+
+  const clearRiskCard = () => {
+    setRisk('')
+    clearActiveCard()
+  }
 
   const total = properties.length
   const onboarding = properties.filter(
@@ -574,17 +667,26 @@ export function DashboardPage() {
               label="Total Properties"
               value={String(total)}
               sub={`${onboarding} onboarding`}
+              active={activeCard === 'total'}
+              onClick={selectTotalCard}
+              onClear={clearTotalCard}
             />
             <StatCard
               label="Activated"
               value={String(activated)}
               sub="Live properties"
               valueClassName="text-success"
+              active={activeCard === 'activated'}
+              onClick={selectActivatedCard}
+              onClear={clearActivatedCard}
             />
             <StatCard
               label="Avg Overall TTV"
               value={`${avgTtv}%`}
               sub="Across active properties"
+              active={activeCard === 'ttv'}
+              onClick={selectTtvCard}
+              onClear={clearTtvCard}
             />
             <StatCard
               label="Critical Risk"
@@ -592,6 +694,9 @@ export function DashboardPage() {
               sub="Require attention"
               valueClassName="text-danger"
               critical
+              active={activeCard === 'risk'}
+              onClick={selectRiskCard}
+              onClear={clearRiskCard}
             />
           </div>
 
@@ -601,7 +706,7 @@ export function DashboardPage() {
             <CustomDropdown
               options={LIFECYCLE_OPTIONS}
               value={lifecycle}
-              onChange={(v) => setLifecycle(v as LifecycleFilter)}
+              onChange={(v) => onLifecycleChange(v as LifecycleFilter)}
               width="190px"
             />
             <CustomDropdown
@@ -610,13 +715,13 @@ export function DashboardPage() {
                 ...regions.map((r) => ({ value: r, label: r, dot: '#374151' })),
               ]}
               value={region}
-              onChange={setRegion}
+              onChange={onRegionChange}
               width="170px"
             />
             <CustomDropdown
               options={RISK_OPTIONS}
               value={risk}
-              onChange={(v) => setRisk(v as RiskFilter)}
+              onChange={(v) => onRiskChange(v as RiskFilter)}
               width="170px"
             />
             <span className="ml-auto font-mono text-xs text-muted">
