@@ -37,6 +37,19 @@ function bearerToken(req: Request): string | null {
   return match?.[1]?.trim() || null
 }
 
+/** Read the `role` claim from a Supabase JWT (anon | authenticated | service_role). */
+function jwtRole(token: string): string | null {
+  try {
+    const parts = token.split('.')
+    if (parts.length < 2) return null
+    const json = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'))
+    const payload = JSON.parse(json) as { role?: string }
+    return typeof payload.role === 'string' ? payload.role : null
+  } catch {
+    return null
+  }
+}
+
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -71,19 +84,25 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return json(400, { success: false, error: 'Invalid source' })
     }
 
-    // Auth: manual_test accepts the anon key; everything else needs service role.
+    // Auth: manual_test accepts anon (or service role); everything else needs
+    // service_role. Prefer JWT role claim — env key strings can diverge from
+    // the legacy anon JWT the browser sends.
     const token = bearerToken(req)
     if (!token) {
       return json(401, { success: false, error: 'Missing Authorization' })
     }
+    const role = jwtRole(token)
+    const isServiceRole =
+      role === 'service_role' || token === serviceRoleKey
+    const isAnon = role === 'anon' || token === anonKey
     if (source === 'manual_test') {
-      if (token !== anonKey && token !== serviceRoleKey) {
+      if (!isAnon && !isServiceRole) {
         return json(401, {
           success: false,
           error: 'manual_test requires anon or service role key',
         })
       }
-    } else if (token !== serviceRoleKey) {
+    } else if (!isServiceRole) {
       return json(401, {
         success: false,
         error: 'service role key required',
