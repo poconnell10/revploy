@@ -50,10 +50,14 @@ interface Entity {
   name: string
 }
 
+interface OwnerEntity extends Entity {
+  owner_type: string | null
+}
+
 const INPUT_CLASS =
   'w-full rounded-lg border border-gray-100 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-gold focus:ring-1 focus:ring-gold'
 
-function useEntities(table: 'regions' | 'brands' | 'owners') {
+function useEntities(table: 'regions' | 'brands') {
   return useQuery({
     queryKey: [table],
     queryFn: async (): Promise<Entity[]> => {
@@ -63,6 +67,20 @@ function useEntities(table: 'regions' | 'brands' | 'owners') {
         .order('name')
       if (error) throw error
       return (data ?? []) as Entity[]
+    },
+  })
+}
+
+function useOwners() {
+  return useQuery({
+    queryKey: ['owners'],
+    queryFn: async (): Promise<OwnerEntity[]> => {
+      const { data, error } = await supabase
+        .from('owners')
+        .select('id, name, owner_type')
+        .order('name')
+      if (error) throw error
+      return (data ?? []) as OwnerEntity[]
     },
   })
 }
@@ -132,7 +150,7 @@ function EntitySelect({
   control,
 }: {
   label: string
-  name: 'region_id' | 'brand_id' | 'owner_id'
+  name: 'region_id' | 'brand_id'
   query: UseQueryResult<Entity[]>
   control: Control<FormValues>
 }) {
@@ -145,25 +163,72 @@ function EntitySelect({
   }
 
   const items = query.data ?? []
-  const empty = items.length === 0
 
   return (
     <Field label={label}>
       <Controller
-        control={control}
         name={name}
+        control={control}
         render={({ field }) => (
           <CustomDropdown
-            options={items.map((item) => ({
-              value: item.id,
-              label: item.name,
-              dot: '#374151',
-            }))}
             value={field.value ?? ''}
             onChange={field.onChange}
-            placeholder={empty ? 'None available' : 'Select…'}
-            disabled={empty}
+            placeholder="Select…"
             width="100%"
+            options={[
+              { value: '', label: 'None' },
+              ...items.map((item) => ({
+                value: item.id,
+                label: item.name,
+                dot: '#374151',
+              })),
+            ]}
+          />
+        )}
+      />
+    </Field>
+  )
+}
+
+function OwnerSelect({
+  query,
+  control,
+}: {
+  query: UseQueryResult<OwnerEntity[]>
+  control: Control<FormValues>
+}) {
+  if (query.isLoading) {
+    return (
+      <Field label="Owner">
+        <div className="h-[42px] w-full animate-pulse rounded-lg bg-gray-100" />
+      </Field>
+    )
+  }
+
+  const owners = query.data ?? []
+
+  return (
+    <Field label="Owner">
+      <Controller
+        name="owner_id"
+        control={control}
+        render={({ field }) => (
+          <CustomDropdown
+            value={field.value ?? ''}
+            onChange={field.onChange}
+            placeholder="Select…"
+            width="100%"
+            options={[
+              { value: '', label: 'None' },
+              ...owners.map((o) => ({
+                value: o.id,
+                label: o.name,
+                sub: o.owner_type
+                  ? o.owner_type.replace('_', ' ')
+                  : undefined,
+                dot: '#374151',
+              })),
+            ]}
           />
         )}
       />
@@ -175,7 +240,7 @@ export function PropertyCreatePage() {
   const navigate = useNavigate()
   const regions = useEntities('regions')
   const brands = useEntities('brands')
-  const owners = useEntities('owners')
+  const owners = useOwners()
   const productsQuery = useProducts()
 
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(
@@ -417,12 +482,7 @@ export function PropertyCreatePage() {
             query={brands}
             control={control}
           />
-          <EntitySelect
-            label="Owner"
-            name="owner_id"
-            query={owners}
-            control={control}
-          />
+          <OwnerSelect query={owners} control={control} />
         </div>
 
         {/* Section 3 — Products */}

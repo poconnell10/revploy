@@ -90,6 +90,7 @@ export function CustomDropdown({
           {options.map((opt) => {
             const active = opt.value === value
             const isPerson = !!opt.initials
+            const hasSub = !!opt.sub
             return (
               <button
                 key={opt.value}
@@ -100,7 +101,7 @@ export function CustomDropdown({
                 }}
                 className={cn(
                   'flex w-full items-center gap-2.5 px-3.5 text-left transition-colors',
-                  isPerson ? 'py-2' : 'h-9',
+                  isPerson || hasSub ? 'py-2' : 'h-9',
                   active ? 'bg-gold-light' : 'hover:bg-[#f8fafc]',
                 )}
               >
@@ -134,14 +135,34 @@ export function CustomDropdown({
                         style={{ background: opt.dot }}
                       />
                     )}
-                    <span
-                      className={cn(
-                        'truncate text-[13px]',
-                        active ? 'font-semibold text-warning' : 'text-gray-700',
-                      )}
-                    >
-                      {opt.label}
-                    </span>
+                    {hasSub ? (
+                      <span className="min-w-0">
+                        <span
+                          className={cn(
+                            'block truncate text-[13px]',
+                            active
+                              ? 'font-semibold text-warning'
+                              : 'text-gray-700',
+                          )}
+                        >
+                          {opt.label}
+                        </span>
+                        <span className="block truncate text-[12px] capitalize text-gray-400">
+                          {opt.sub}
+                        </span>
+                      </span>
+                    ) : (
+                      <span
+                        className={cn(
+                          'truncate text-[13px]',
+                          active
+                            ? 'font-semibold text-warning'
+                            : 'text-gray-700',
+                        )}
+                      >
+                        {opt.label}
+                      </span>
+                    )}
                   </>
                 )}
               </button>
