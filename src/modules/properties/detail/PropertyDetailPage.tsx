@@ -56,6 +56,7 @@ interface TaskDefinition {
   task_key: string
   phase: Phase
   display_name: string
+  description: string | null
   required_role: string
   is_phase_gate: boolean
   completion_mode: string
@@ -207,7 +208,7 @@ function useTasks(id: string, propertyProductId: string | undefined) {
       const { data, error } = await supabase
         .from('property_lifecycle_tasks')
         .select(
-          'id, property_product_id, status, assigned_to, completed_at, due_date, blocked_reason, notes, definition:lifecycle_task_definitions(task_key, phase, display_name, required_role, is_phase_gate, completion_mode, order_index)',
+          'id, property_product_id, status, assigned_to, completed_at, due_date, blocked_reason, notes, definition:lifecycle_task_definitions(task_key, phase, display_name, description, required_role, is_phase_gate, completion_mode, order_index)',
         )
         .eq('property_id', id)
         .eq('property_product_id', propertyProductId as string)
@@ -818,15 +819,27 @@ function EnhancedTaskRow({
         opacity: gated ? 0.45 : 1,
       }}
     >
-      {/* Collapsed single-line row */}
+      {/* Collapsed row: name + description left, controls right */}
       <div
         onClick={() => !gated && setExpanded((v) => !v)}
-        className="flex h-12 items-center gap-3 px-4"
+        className="flex items-center gap-3 px-4 py-2.5"
         style={{ cursor: gated ? 'not-allowed' : 'pointer' }}
       >
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-navy">
-          {def.display_name}
-        </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-bold text-navy">
+            {def.display_name}
+          </div>
+          {def.description?.trim() && !expanded && (
+            <div className="mt-0.5 max-w-[600px] truncate text-[11px] font-normal text-gray-400">
+              {def.description}
+            </div>
+          )}
+          {def.description?.trim() && expanded && (
+            <div className="mt-0.5 max-w-[600px] text-[11px] font-normal leading-snug text-gray-400">
+              {def.description}
+            </div>
+          )}
+        </div>
         {def.is_phase_gate && (
           <span className="shrink-0 whitespace-nowrap rounded border border-[#fde8a5] bg-gold-light px-1.5 py-0.5 text-[10px] font-semibold text-warning">
             Phase Gate
